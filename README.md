@@ -53,7 +53,9 @@
 
 ## 从源码编译
 
-需要 macOS 13+ 和 Xcode 15+(或 Swift 5.9+ 命令行工具)。
+需要 macOS 13+ 和 Xcode 26.4+。Xcode 26.4 SDK 用于编译 Apple 翻译的
+「快速翻译 / 高质量翻译」双模式；生成的 App 仍然支持 macOS 13+，
+Apple 翻译功能会按实际系统版本显示。
 
 ```bash
 git clone https://github.com/mohist-club/Poptro.git

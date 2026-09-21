@@ -21,12 +21,14 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    # Apple Translation 的 highFidelity / lowLatency strategy API 从
+    # Xcode 26.4 SDK 开始可用；macos-15 默认 Xcode 16.4 无法编译。
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
       - name: Select latest Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
       - name: Build, package and sign
         run: ./build.sh
