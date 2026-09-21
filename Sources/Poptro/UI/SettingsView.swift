@@ -30,7 +30,9 @@ enum SettingsDestination: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
+    @ObservedObject private var launcher = AppLauncher.shared
     @State private var destination: SettingsDestination
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init(initialDestination: SettingsDestination = .general) {
         _destination = State(initialValue: initialDestination)
@@ -39,9 +41,31 @@ struct SettingsView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SafariSettingsToolbar(selection: $destination, language: language)
-            Divider()
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            List(selection: $destination) {
+                Section {
+                    sidebarRow(.general)
+                    sidebarRow(.shortcuts, badge: launcher.bindings.count + 1)
+                    sidebarRow(.services, badge: configuredProviderCount)
+                    sidebarRow(.appearance)
+                } header: {
+                    Text(t("偏好设置", "Preferences"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    sidebarRow(.about)
+                } header: {
+                    Text("Poptro")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 176, ideal: 196, max: 230)
+            .navigationTitle("Poptro")
+        } detail: {
             Group {
                 switch destination {
                 case .general: GeneralSettingsView()
@@ -52,82 +76,79 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .navigationTitle(destination.title(language))
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
+            }
         }
         .background {
-            SettingsSurfaceBackground(
+            AdaptiveSettingsBackground(
                 isEnabled: preferences.values.glassEffectEnabled,
                 transparency: preferences.values.glassTransparency
             )
-                .ignoresSafeArea()
+            .ignoresSafeArea()
         }
         .frame(minWidth: 836, minHeight: 560)
+        .navigationSplitViewStyle(.balanced)
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
     }
-}
 
-private struct SafariSettingsToolbar: View {
-    @Binding var selection: SettingsDestination
-    let language: InterfaceLanguage
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(SettingsDestination.allCases) { destination in
-                Button {
-                    selection = destination
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: destination.icon)
-                            .symbolRenderingMode(.monochrome)
-                            .font(.system(size: 22, weight: .regular))
-                            .frame(width: 28, height: 25)
-                        Text(destination.title(language))
-                            .font(.system(size: 11, weight: .regular))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-                    .foregroundStyle(selection == destination ? Color.accentColor : Color.secondary)
-                    .frame(width: 56, height: 49)
-                    .background {
-                        if selection == destination {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.76))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.6)
-                                }
-                        }
-                    }
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(destination.title(language))
-                .accessibilityAddTraits(selection == destination ? .isSelected : [])
+    @ViewBuilder
+    private func sidebarRow(_ item: SettingsDestination, badge: Int? = nil) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: item.icon)
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 20)
+            Text(item.title(language))
+            Spacer(minLength: 8)
+            if let badge {
+                Text("\(badge)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-        .padding(.top, 7)
-        .padding(.bottom, 6)
-        .frame(height: 63)
-        .background(.bar)
+        .tag(item)
+    }
+
+    private var configuredProviderCount: Int {
+        TranslationSettings.loadCurrent().availableConfiguredProviders().count
+    }
+
+    private func t(_ zh: String, _ en: String) -> String {
+        PoptroText.value(zh, en, language: language)
     }
 }
 
-private struct SettingsSurfaceBackground: View {
+private struct AdaptiveSettingsBackground: View {
     let isEnabled: Bool
     let transparency: Double
 
     var body: some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            Color.clear
+        } else {
+            legacyBackground
+        }
+        #else
+        legacyBackground
+        #endif
+    }
+
+    @ViewBuilder
+    private var legacyBackground: some View {
         if isEnabled {
             ZStack {
                 SettingsMaterialBackground()
-                Color(nsColor: .windowBackgroundColor)
-                    .opacity(max(0.08, 1 - transparency))
+                Color(nsColor: .windowBackgroundColor).opacity(max(0.08, 1 - transparency))
             }
-        } else {
-            Color(nsColor: .windowBackgroundColor)
-        }
+        } else { Color(nsColor: .windowBackgroundColor) }
     }
 }
 
@@ -146,6 +167,116 @@ private struct SettingsMaterialBackground: NSViewRepresentable {
     }
 }
 
+private struct SettingsListHeader<Actions: View>: View {
+    let title: String
+    let subtitle: String
+    @ViewBuilder let actions: Actions
+
+    init(title: String, subtitle: String, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.subtitle = subtitle
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            HStack(spacing: 6) { actions }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+}
+
+private struct SettingsDetailHeader: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let status: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 42, height: 42)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 10)
+            Text(status)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SettingsEmptyDetail: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 42, weight: .regular))
+                .foregroundStyle(.tertiary)
+            Text(title).font(.title3.weight(.semibold))
+            if !message.isEmpty {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
+        }
+        .padding(36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func settingsToolbarMenuStyle() -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            self
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .menuIndicator(.hidden)
+                .controlSize(.regular)
+        } else {
+            self
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .menuIndicator(.hidden)
+                .controlSize(.regular)
+        }
+        #else
+        self
+            .menuStyle(.button)
+            .buttonStyle(.bordered)
+            .menuIndicator(.hidden)
+            .controlSize(.regular)
+        #endif
+    }
+}
+
 struct GeneralSettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
     @State private var launchAtLogin: Bool
@@ -157,99 +288,78 @@ struct GeneralSettingsView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                PreferenceRow(t("开机时启动", "Launch at Login")) {
-                    Toggle(t("开启", "On"), isOn: $launchAtLogin)
-                        .toggleStyle(.checkbox)
-                        .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
-                }
-                PreferenceRow(t("划词翻译快捷键", "Selection Translation Shortcut")) {
-                    ShortcutRecorderView(name: .translateSelection)
-                        .frame(width: 260)
+        Form {
+            Section(t("启动与快捷键", "Startup & Shortcut")) {
+                Toggle(t("开机时启动", "Launch at Login"), isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
+                LabeledContent(t("划词翻译快捷键", "Selection Translation Shortcut")) {
+                    ShortcutRecorderView(name: .translateSelection).frame(width: 180)
                 }
                 if let launchAtLoginError {
-                    PreferenceSupportingText(launchAtLoginError, color: .red)
+                    Label(launchAtLoginError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.red)
                 }
+            }
 
-                PreferenceSectionGap()
-
-                PreferenceRow(t("界面语言", "Interface Language")) {
-                    Picker("", selection: $preferences.values.interfaceLanguage) {
-                        ForEach(InterfaceLanguage.allCases) { Text($0.nativeDisplayName).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 260)
+            Section(t("语言与权限", "Language & Permissions")) {
+                Picker(t("界面语言", "Interface Language"), selection: $preferences.values.interfaceLanguage) {
+                    ForEach(InterfaceLanguage.allCases) { Text($0.nativeDisplayName).tag($0) }
                 }
-                PreferenceRow(t("所需权限", "Required Permission"), alignment: .top) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 8) {
-                            Label(
-                                accessibilityGranted ? t("辅助功能已允许", "Accessibility Allowed") : t("辅助功能未允许", "Accessibility Not Allowed"),
-                                systemImage: accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                            )
-                            .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
-                            Button(t("重新检测", "Recheck")) {
-                                accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
-                            }
-                            Button(t("前往系统设置…", "Open System Settings…")) {
-                                PermissionManager.shared.openSystemPreferencesAccessibilityPane()
-                            }
+                LabeledContent(t("辅助功能", "Accessibility")) {
+                    HStack(spacing: 8) {
+                        Label(
+                            accessibilityGranted ? t("已允许", "Allowed") : t("未允许", "Not Allowed"),
+                            systemImage: accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                        )
+                        .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+                        Button(t("重新检测", "Recheck")) {
+                            accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
                         }
-                        Text(t(
-                            "Poptro 只使用辅助功能读取选中的文字并触发快捷键，不会记录或上传你的内容。",
-                            "Poptro only uses Accessibility to read selected text and trigger shortcuts. It never records or uploads your content."
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-
-                PreferenceSectionGap()
-
-                PreferenceRow(t("默认翻译服务", "Default Translation Service")) {
-                    Picker("", selection: defaultProviderBinding) {
-                        ForEach(availableProviders) { provider in
-                            Text(provider.localizedDisplayName(language: language)).tag(provider)
+                        Button(t("前往系统设置…", "Open System Settings…")) {
+                            PermissionManager.shared.openSystemPreferencesAccessibilityPane()
                         }
                     }
-                    .labelsHidden()
-                    .frame(width: 260)
                 }
-                PreferenceRow(t("默认目标语言", "Default Target Language")) {
-                    Picker("", selection: primaryLanguageBinding) {
-                        ForEach(SupportedLanguage.options, id: \.code) { option in
-                            Text(SupportedLanguage.localizedLabel(for: option.code, language: language)).tag(option.code)
-                        }
+                Text(t(
+                    "Poptro 只使用辅助功能读取选中的文字并触发快捷键，不会记录或上传你的内容。",
+                    "Poptro only uses Accessibility to read selected text and trigger shortcuts. It never records or uploads your content."
+                ))
+                .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section(t("外观", "Appearance")) {
+                Picker(t("外观模式", "Appearance Mode"), selection: $preferences.values.appearanceMode) {
+                    ForEach(PanelAppearanceMode.allCases) {
+                        Text($0.localizedName(language: language)).tag($0)
                     }
-                    .labelsHidden()
-                    .frame(width: 260)
                 }
-                PreferenceRow(t("自动检查更新", "Automatically Check for Updates")) {
-                    Toggle(t("开启", "On"), isOn: $preferences.values.automaticUpdateChecks)
-                        .toggleStyle(.checkbox)
+                Toggle(t("窗口玻璃效果", "Window Glass Effect"), isOn: $preferences.values.glassEffectEnabled)
+            }
+
+            Section(t("翻译", "Translation")) {
+                Picker(t("默认翻译服务", "Default Translation Service"), selection: defaultProviderBinding) {
+                    ForEach(availableProviders) { provider in
+                        Text(provider.localizedDisplayName(language: language)).tag(provider)
+                    }
                 }
-
-                PreferenceSectionGap()
-
-                PreferenceRow(t("帮助与反馈", "Help & Feedback"), alignment: .top) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Link("GitHub Issues", destination: URL(string: "https://github.com/mohist-club/Poptro/issues")!)
-                        Text(t(
-                            "隐私：所有设置仅保存在这台 Mac 上。",
-                            "Privacy: all settings are stored only on this Mac."
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Picker(t("默认目标语言", "Default Target Language"), selection: primaryLanguageBinding) {
+                    ForEach(SupportedLanguage.options, id: \.code) { option in
+                        Text(SupportedLanguage.localizedLabel(for: option.code, language: language)).tag(option.code)
                     }
                 }
             }
-            .controlSize(.regular)
-            .frame(maxWidth: 680)
-            .padding(.horizontal, 26)
-            .padding(.top, 20)
-            .padding(.bottom, 22)
+
+            Section(t("更新与帮助", "Updates & Help")) {
+                Toggle(t("自动检查更新", "Automatically Check for Updates"), isOn: $preferences.values.automaticUpdateChecks)
+                LabeledContent(t("帮助与反馈", "Help & Feedback")) {
+                    Link("GitHub Issues", destination: URL(string: "https://github.com/mohist-club/Poptro/issues")!)
+                }
+                Text(t("所有设置仅保存在这台 Mac 上。", "All settings are stored only on this Mac."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
+        .formStyle(.grouped)
+        .controlSize(.regular)
         .onAppear {
             accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
             translationSettings = TranslationSettings.loadCurrent()
@@ -284,105 +394,22 @@ struct GeneralSettingsView: View {
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
 }
 
-private struct PreferenceRow<Content: View>: View {
-    let label: String
-    let alignment: VerticalAlignment
-    let content: Content
-
-    init(_ label: String, alignment: VerticalAlignment = .center, @ViewBuilder content: () -> Content) {
-        self.label = label
-        self.alignment = alignment
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(alignment: alignment, spacing: 12) {
-            Text(label + "：")
-                .font(.system(size: 13))
-                .frame(width: 220, alignment: .trailing)
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(minHeight: 34)
-    }
-}
-
-private struct PreferenceSectionGap: View {
-    var body: some View { Color.clear.frame(height: 12) }
-}
-
-private struct PreferenceSupportingText: View {
-    let text: String
-    let color: Color
-
-    init(_ text: String, color: Color = .secondary) {
-        self.text = text
-        self.color = color
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Color.clear.frame(width: 220, height: 1)
-            Text(text).font(.caption).foregroundStyle(color)
-            Spacer()
-        }
-        .padding(.top, -5)
-    }
-}
-
 struct ShortcutSettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
     @ObservedObject private var launcher = AppLauncher.shared
     @AppStorage("translateShortcutEnabled") private var translateShortcutEnabled = true
     @State private var addSheet: ShortcutAddSheet?
+    @State private var selection: ShortcutSelection?
+    @State private var filter: ShortcutListFilter = .all
+    @State private var searchText = ""
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(spacing: 0) {
-            List {
-                Section {
-                    HStack(spacing: 10) {
-                        Image(systemName: "character.cursor.ibeam").frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(t("划词翻译", "Translate Selection"))
-                            Text(t("翻译当前选中的文字", "Translate the currently selected text"))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        ShortcutRecorderView(name: .translateSelection).frame(width: 150)
-                        Toggle("", isOn: $translateShortcutEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.checkbox)
-                            .onChange(of: translateShortcutEnabled) { HotkeyManager.shared.setTranslationEnabled($0) }
-                        Label(t("内置", "Built-in"), systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .frame(minHeight: 38)
-                } header: {
-                    Text(t("内置快捷键", "Built-in Shortcut"))
-                }
-                bindingSection(.application, title: t("应用", "Applications"))
-                bindingSection(.shortcut, title: t("快捷指令", "Shortcuts"))
-                bindingSection(.system, title: t("系统操作", "System Actions"))
-                bindingSection(.script, title: t("脚本", "Scripts"))
-            }
-            .listStyle(.inset)
-            Divider()
-            HStack {
-                Menu {
-                    Button { addSheet = .application } label: { Label(t("应用", "Application"), systemImage: "app") }
-                    Button { addSheet = .shortcut } label: { Label(t("快捷指令", "Shortcut"), systemImage: "square.stack.3d.up") }
-                    Button { addSheet = .system } label: { Label(t("系统操作", "System Action"), systemImage: "gearshape.2") }
-                    Button { addSheet = .script } label: { Label(t("脚本", "Script"), systemImage: "terminal") }
-                } label: {
-                    Label(t("添加快捷键", "Add Shortcut"), systemImage: "plus")
-                }
-                Spacer()
-                Text(t("所有快捷键均可随时修改。", "All shortcuts can be changed at any time."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+        HSplitView {
+            shortcutMaster
+                .frame(minWidth: 280, idealWidth: 310, maxWidth: 340)
+            shortcutDetail
+                .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
         .sheet(item: $addSheet) { sheet in
             switch sheet {
@@ -394,41 +421,201 @@ struct ShortcutSettingsView: View {
         }
     }
 
-    @ViewBuilder private func bindingSection(_ kind: ShortcutActionKind, title: String) -> some View {
-        let items = launcher.bindings(of: kind)
-        if !items.isEmpty {
-            Section {
-                ForEach(items) { binding in bindingRow(binding) }
-            } header: {
-                Text(title)
+    private var shortcutMaster: some View {
+        VStack(spacing: 0) {
+            SettingsListHeader(
+                title: t("快捷键", "Shortcuts"),
+                subtitle: t("共 \(launcher.bindings.count + 1) 个绑定", "\(launcher.bindings.count + 1) bindings")
+            ) {
+                Menu {
+                    Button { addSheet = .application } label: { Label(t("应用", "Application"), systemImage: "app") }
+                    Button { addSheet = .shortcut } label: { Label(t("快捷指令", "Shortcut"), systemImage: "square.stack.3d.up") }
+                    Button { addSheet = .system } label: { Label(t("系统操作", "System Action"), systemImage: "gearshape.2") }
+                    Button { addSheet = .script } label: { Label(t("脚本", "Script"), systemImage: "terminal") }
+                } label: { Image(systemName: "plus") }
+                .settingsToolbarMenuStyle()
+                .fixedSize()
+                .help(t("添加快捷键", "Add Shortcut"))
+
+                Menu {
+                    Button(t("显示全部", "Show All")) { filter = .all }
+                    Divider()
+                    ForEach(ShortcutActionKind.allCases) { kind in
+                        Button(actionKindName(kind)) { filter = .kind(kind) }
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                .settingsToolbarMenuStyle()
+                .fixedSize()
+                .help(t("筛选快捷键", "Filter Shortcuts"))
+            }
+
+            shortcutFilterPills
+
+            List(selection: $selection) {
+                if filter.showsBuiltIn, matchesSearch(t("划词翻译", "Translate Selection")) {
+                    Section(t("翻译快捷键", "Translation Shortcut")) {
+                        shortcutRow(
+                            icon: "character.cursor.ibeam",
+                            name: t("划词翻译", "Translate Selection"),
+                            subtitle: t("内置", "Built-in"),
+                            shortcutName: .translateSelection,
+                            enabled: translateShortcutEnabled
+                        )
+                        .tag(ShortcutSelection.translation)
+                    }
+                }
+                ForEach(ShortcutActionKind.allCases) { kind in
+                    let items = filteredBindings(for: kind)
+                    if !items.isEmpty {
+                        Section(actionKindName(kind)) {
+                            ForEach(items) { binding in
+                                shortcutRow(
+                                    icon: actionIcon(binding),
+                                    name: binding.appName,
+                                    subtitle: actionSubtitle(binding),
+                                    shortcutName: KeyboardShortcuts.Name(binding.hotkeyName),
+                                    enabled: binding.isEnabled,
+                                    appIconPath: binding.actionKind == .application ? binding.appBundlePath : nil
+                                )
+                                .tag(ShortcutSelection.binding(binding.id))
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+            .searchable(text: $searchText, placement: .toolbar, prompt: t("搜索快捷键", "Search Shortcuts"))
+        }
+    }
+
+    @ViewBuilder private var shortcutDetail: some View {
+        switch selection {
+        case .none:
+            SettingsEmptyDetail(
+                icon: "keyboard.badge.ellipsis",
+                title: t("选择一个快捷键", "Select a Shortcut"),
+                message: t("从中间列表选择一项以查看或修改设置。", "Choose an item from the middle list to view or edit its settings.")
+            )
+        case .translation:
+            VStack(spacing: 0) {
+                SettingsDetailHeader(
+                    icon: "character.cursor.ibeam",
+                    title: t("划词翻译", "Translate Selection"),
+                    subtitle: t("内置快捷键", "Built-in shortcut"),
+                    status: translateShortcutEnabled ? t("已启用", "Enabled") : t("已停用", "Disabled")
+                )
+                Form {
+                    Section(t("快捷键设置", "Shortcut Settings")) {
+                        LabeledContent(t("名称", "Name"), value: t("划词翻译", "Translate Selection"))
+                        LabeledContent(t("组合键", "Key Combination")) {
+                            ShortcutRecorderView(name: .translateSelection).frame(width: 160)
+                        }
+                        Toggle(t("已启用", "Enabled"), isOn: $translateShortcutEnabled)
+                            .onChange(of: translateShortcutEnabled) { HotkeyManager.shared.setTranslationEnabled($0) }
+                    }
+                    Section {
+                        Label(t("内置快捷键不可删除。", "The built-in shortcut cannot be deleted."), systemImage: "lock.fill")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .formStyle(.grouped)
+            }
+        case .binding(let id):
+            if let binding = launcher.bindings.first(where: { $0.id == id }) {
+                bindingDetail(binding)
+            } else {
+                SettingsEmptyDetail(icon: "keyboard", title: t("快捷键不可用", "Shortcut Unavailable"), message: "")
             }
         }
     }
 
-    private func bindingRow(_ binding: LaunchBinding) -> some View {
-        HStack(spacing: 10) {
-            Group {
-                if binding.actionKind == .application {
-                    Image(nsImage: launcher.icon(forAppPath: binding.appBundlePath)).resizable()
-                } else {
-                    Image(systemName: actionIcon(binding)).resizable().scaledToFit().foregroundStyle(.secondary)
+    private func bindingDetail(_ binding: LaunchBinding) -> some View {
+        VStack(spacing: 0) {
+            SettingsDetailHeader(
+                icon: actionIcon(binding),
+                title: binding.appName,
+                subtitle: actionSubtitle(binding),
+                status: binding.isEnabled ? t("已启用", "Enabled") : t("已停用", "Disabled")
+            )
+            Form {
+                Section(t("快捷键设置", "Shortcut Settings")) {
+                    LabeledContent(t("名称", "Name"), value: binding.appName)
+                    LabeledContent(t("分类", "Category"), value: actionKindName(binding.actionKind))
+                    LabeledContent(t("组合键", "Key Combination")) {
+                        ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 160)
+                    }
+                    Toggle(t("已启用", "Enabled"), isOn: Binding(
+                        get: { launcher.bindings.first(where: { $0.id == binding.id })?.isEnabled ?? false },
+                        set: { launcher.setEnabled($0, for: binding) }
+                    ))
+                }
+                Section {
+                    Button(t("删除快捷键", "Delete Shortcut"), role: .destructive) {
+                        launcher.removeBinding(binding)
+                        selection = nil
+                    }
                 }
             }
-            .frame(width: 28, height: 28)
+            .formStyle(.grouped)
+        }
+    }
+
+    private var shortcutFilterPills: some View {
+        HStack(spacing: 7) {
+            filterPill(t("全部", "All"), icon: "keyboard", selected: filter == .all) { filter = .all }
+            filterPill(t("应用", "Apps"), icon: "app", selected: filter == .kind(.application)) { filter = .kind(.application) }
+            filterPill(t("快捷指令", "Shortcuts"), icon: "square.stack.3d.up", selected: filter == .kind(.shortcut)) { filter = .kind(.shortcut) }
+            filterPill(t("更多", "More"), icon: "ellipsis", selected: filter == .more) { filter = .more }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    private func filterPill(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Group {
+            if selected {
+                Button(action: action) { Label(title, systemImage: icon) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(nsColor: .controlTextColor))
+            } else {
+                Button(action: action) { Label(title, systemImage: icon).labelStyle(.iconOnly) }
+                    .buttonStyle(.bordered)
+                    .help(title)
+            }
+        }
+        .controlSize(.small)
+    }
+
+    private func shortcutRow(
+        icon: String,
+        name: String,
+        subtitle: String,
+        shortcutName: KeyboardShortcuts.Name,
+        enabled: Bool,
+        appIconPath: String? = nil
+    ) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if let appIconPath {
+                    Image(nsImage: launcher.icon(forAppPath: appIconPath)).resizable()
+                } else {
+                    Image(systemName: icon).resizable().scaledToFit().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(binding.appName)
-                Text(actionSubtitle(binding)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(name).fontWeight(.medium).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 150)
-            Toggle("", isOn: Binding(
-                get: { launcher.bindings.first(where: { $0.id == binding.id })?.isEnabled ?? false },
-                set: { launcher.setEnabled($0, for: binding) }
-            )).labelsHidden().toggleStyle(.checkbox)
-            Button(role: .destructive) { launcher.removeBinding(binding) } label: { Image(systemName: "minus.circle") }
-                .buttonStyle(.borderless).help(t("删除快捷键", "Remove Shortcut"))
+            Text(KeyboardShortcuts.getShortcut(for: shortcutName).map(String.init(describing:)) ?? "—")
+                .font(.callout.monospaced())
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            Circle().fill(enabled ? Color.green : Color.secondary.opacity(0.45)).frame(width: 8, height: 8)
         }
-        .frame(minHeight: 34)
+        .padding(.vertical, 3)
     }
 
     private var sheetBinding: Binding<Bool> {
@@ -441,6 +628,21 @@ struct ShortcutSettingsView: View {
         case .system: return "gearshape.2"
         case .script: return "terminal"
         }
+    }
+    private func actionKindName(_ kind: ShortcutActionKind) -> String {
+        switch kind {
+        case .application: return t("应用", "Applications")
+        case .shortcut: return t("快捷指令", "Shortcuts")
+        case .system: return t("系统操作", "System Actions")
+        case .script: return t("脚本", "Scripts")
+        }
+    }
+    private func filteredBindings(for kind: ShortcutActionKind) -> [LaunchBinding] {
+        guard filter.shows(kind) else { return [] }
+        return launcher.bindings(of: kind).filter { matchesSearch($0.appName) || matchesSearch(actionSubtitle($0)) }
+    }
+    private func matchesSearch(_ value: String) -> Bool {
+        searchText.isEmpty || value.localizedCaseInsensitiveContains(searchText)
     }
     private func actionSubtitle(_ binding: LaunchBinding) -> String {
         switch binding.actionKind {
@@ -456,6 +658,26 @@ struct ShortcutSettingsView: View {
         }
     }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+private enum ShortcutSelection: Hashable {
+    case translation
+    case binding(UUID)
+}
+
+private enum ShortcutListFilter: Hashable {
+    case all
+    case kind(ShortcutActionKind)
+    case more
+
+    var showsBuiltIn: Bool { self == .all }
+    func shows(_ kind: ShortcutActionKind) -> Bool {
+        switch self {
+        case .all: return true
+        case .kind(let selected): return selected == kind
+        case .more: return kind == .system || kind == .script
+        }
+    }
 }
 
 private enum ShortcutAddSheet: String, Identifiable {
@@ -665,6 +887,8 @@ struct ServicesSettingsView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showSaved = false
+    @State private var filter: ProviderListFilter = .all
+    @State private var searchText = ""
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     init() {
@@ -675,48 +899,15 @@ struct ServicesSettingsView: View {
 
     var body: some View {
         HSplitView {
-            VStack(spacing: 0) {
-                List(selection: $selectedProvider) {
-                    Section(t("翻译服务", "Translation Services")) {
-                        ForEach(displayedProviders) { provider in
-                            providerRow(provider).tag(provider)
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-                Divider()
-                HStack {
-                    Menu {
-                        ForEach(addableProviders) { provider in
-                            Button {
-                                selectedProvider = provider
-                            } label: {
-                                Label(providerListName(provider), systemImage: providerIcon(provider))
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .help(t("添加服务", "Add Service"))
-                    .disabled(addableProviders.isEmpty)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 34)
-            }
-            .frame(minWidth: 210, idealWidth: 230, maxWidth: 260)
+            providerMaster
+                .frame(minWidth: 280, idealWidth: 310, maxWidth: 340)
 
             VStack(spacing: 0) {
                 providerHeader
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
                 Divider()
-                ScrollView {
-                    providerForm
-                        .frame(width: 520)
-                }
-                .frame(maxWidth: .infinity)
+                providerForm
                 Divider()
                 HStack(spacing: 12) {
                     if isLoadingModels || isBenchmarking { ProgressView().controlSize(.small) }
@@ -733,7 +924,7 @@ struct ServicesSettingsView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 9)
             }
-            .frame(minWidth: 560)
+            .frame(minWidth: 380)
         }
         .onAppear { loadLocalValues() }
         .onChange(of: selectedProvider) { _ in
@@ -742,24 +933,107 @@ struct ServicesSettingsView: View {
         }
     }
 
-    private func providerRow(_ provider: TranslationProvider) -> some View {
-        HStack(spacing: 8) {
-            Label(providerListName(provider), systemImage: providerIcon(provider))
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            if provider == settings.provider {
-                Image(systemName: "star.fill")
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(t("默认服务", "Default Service"))
+    private var providerMaster: some View {
+        VStack(spacing: 0) {
+            SettingsListHeader(
+                title: t("翻译服务", "Translation Services"),
+                subtitle: t(
+                    "已配置 \(configuredProviderCount) / \(TranslationProvider.allCases.count)",
+                    "\(configuredProviderCount) of \(TranslationProvider.allCases.count) configured"
+                )
+            ) {
+                Menu {
+                    ForEach(unconfiguredProviders) { provider in
+                        Button {
+                            selectedProvider = provider
+                            filter = .all
+                        } label: {
+                            Label(providerListName(provider), systemImage: providerIcon(provider))
+                        }
+                    }
+                } label: { Image(systemName: "plus") }
+                .settingsToolbarMenuStyle()
+                .fixedSize()
+                .disabled(unconfiguredProviders.isEmpty)
+                .help(t("添加服务", "Add Service"))
+
+                Menu {
+                    Button(t("刷新配置状态", "Refresh Configuration Status")) { loadLocalValues() }
+                    Button(t("显示全部", "Show All")) { filter = .all; searchText = "" }
+                    Divider()
+                    Link(t("服务帮助", "Service Help"), destination: URL(string: "https://github.com/mohist-club/Poptro")!)
+                } label: { Image(systemName: "ellipsis") }
+                .settingsToolbarMenuStyle()
+                .fixedSize()
+                .help(t("更多操作", "More Actions"))
             }
-            Text(providerStatusText(provider))
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+
+            HStack(spacing: 7) {
+                providerFilterPill(.all, title: t("全部", "All"), icon: "square.grid.2x2")
+                providerFilterPill(.configured, title: t("已配置", "Configured"), icon: "checkmark.circle")
+                providerFilterPill(.unconfigured, title: t("未配置", "Not Configured"), icon: "circle.dashed")
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+
+            List(filteredProviders, selection: $selectedProvider) { provider in
+                providerRow(provider).tag(provider)
+            }
+            .listStyle(.inset)
+            .searchable(text: $searchText, placement: .toolbar, prompt: t("搜索服务", "Search Services"))
         }
-        .padding(.vertical, 3)
+    }
+
+    private func providerFilterPill(_ value: ProviderListFilter, title: String, icon: String) -> some View {
+        Group {
+            if filter == value {
+                Button { filter = value } label: { Label(title, systemImage: icon) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(nsColor: .controlTextColor))
+            } else {
+                Button { filter = value } label: { Label(title, systemImage: icon).labelStyle(.iconOnly) }
+                    .buttonStyle(.bordered)
+                    .help(title)
+            }
+        }
+        .controlSize(.small)
+    }
+
+    private func providerRow(_ provider: TranslationProvider) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: providerIcon(provider))
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: 34, height: 34)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(providerListName(provider)).fontWeight(.medium).lineLimit(1)
+                    if provider == settings.provider {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .accessibilityLabel(t("默认服务", "Default Service"))
+                    }
+                }
+                Text(settings.model(for: provider))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 3) {
+                Circle().fill(isProviderConfigured(provider) ? Color.green : Color.secondary.opacity(0.45))
+                    .frame(width: 7, height: 7)
+                Text(providerStatusText(provider)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private var providerHeader: some View {
         HStack(alignment: .center, spacing: 12) {
+            Image(systemName: providerIcon(selectedProvider))
+                .font(.system(size: 22, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 3) {
                 Text(selectedProvider.localizedDisplayName(language: language))
                     .font(.headline)
@@ -773,6 +1047,10 @@ struct ServicesSettingsView: View {
                     .lineLimit(1)
             }
             Spacer()
+            if selectedProvider.supportsRemoteModelDiscovery {
+                Button(t("读取可用模型", "Load Available Models")) { refreshModels() }
+                    .disabled(isLoadingModels || (selectedProvider.requiresAPIKey && keyBindingValue(selectedProvider).isEmpty))
+            }
             if selectedProvider == settings.provider {
                 Label(t("默认服务", "Default Service"), systemImage: "star.fill")
                     .font(.caption)
@@ -827,14 +1105,9 @@ struct ServicesSettingsView: View {
                     Picker(t("模型", "Model"), selection: selectedModelBinding) {
                         ForEach(modelOptions, id: \.self) { Text($0).tag($0) }
                     }
-                    HStack {
-                        Button { refreshModels() } label: {
-                            Label(t("读取支持的模型", "Load Supported Models"), systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isLoadingModels || (selectedProvider.requiresAPIKey && keyBindingValue(selectedProvider).isEmpty))
-                        Text(t("推荐：", "Recommended: ") + recommendedModel(for: selectedProvider))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    Text(t("推荐：", "Recommended: ") + recommendedModel(for: selectedProvider))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -905,20 +1178,39 @@ struct ServicesSettingsView: View {
             }
 
         }
-        .formStyle(.columns)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .formStyle(.grouped)
     }
 
-    private var displayedProviders: [TranslationProvider] {
-        let configured = settings.configuredProviders
-        return TranslationProvider.allCases.filter {
-            configured.contains($0) || $0 == selectedProvider || $0 == settings.provider
+    private var filteredProviders: [TranslationProvider] {
+        TranslationProvider.allCases.filter { provider in
+            let filterMatches: Bool
+            switch filter {
+            case .all: filterMatches = true
+            case .configured: filterMatches = isProviderConfigured(provider)
+            case .unconfigured: filterMatches = !isProviderConfigured(provider)
+            }
+            let searchMatches = searchText.isEmpty
+                || providerListName(provider).localizedCaseInsensitiveContains(searchText)
+                || settings.model(for: provider).localizedCaseInsensitiveContains(searchText)
+            return filterMatches && searchMatches
         }
     }
 
-    private var addableProviders: [TranslationProvider] {
-        TranslationProvider.allCases.filter { !displayedProviders.contains($0) }
+    private var configuredProviderCount: Int {
+        TranslationProvider.allCases.filter(isProviderConfigured).count
+    }
+
+    private var unconfiguredProviders: [TranslationProvider] {
+        TranslationProvider.allCases.filter { !isProviderConfigured($0) }
+    }
+
+    private func isProviderConfigured(_ provider: TranslationProvider) -> Bool {
+        if provider == .ollama {
+            return settings.configuredProviders.contains(.ollama)
+                && !settings.ollamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return settings.configuredProviders.contains(provider)
+            && !keyBindingValue(provider).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var modelOptions: [String] {
@@ -1079,30 +1371,32 @@ struct ServicesSettingsView: View {
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
 }
 
+private enum ProviderListFilter: Hashable {
+    case all
+    case configured
+    case unconfigured
+}
+
 struct AppearanceSettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                PreferenceRow(t("外观", "Appearance")) {
-                    Picker("", selection: $preferences.values.appearanceMode) {
-                        ForEach(PanelAppearanceMode.allCases) {
-                            Text($0.localizedName(language: language)).tag($0)
-                        }
+        Form {
+            Section(t("外观", "Appearance")) {
+                Picker(t("外观模式", "Appearance Mode"), selection: $preferences.values.appearanceMode) {
+                    ForEach(PanelAppearanceMode.allCases) {
+                        Text($0.localizedName(language: language)).tag($0)
                     }
-                    .labelsHidden()
-                    .frame(width: 260)
                 }
-                PreferenceRow(t("窗口玻璃效果", "Window Glass Effect")) {
-                    Toggle(t("开启", "On"), isOn: $preferences.values.glassEffectEnabled)
-                        .toggleStyle(.checkbox)
-                }
-                PreferenceRow(t("玻璃透明度", "Glass Transparency")) {
+            }
+
+            Section(t("窗口效果", "Window Effects")) {
+                Toggle(t("窗口玻璃效果", "Window Glass Effect"), isOn: $preferences.values.glassEffectEnabled)
+                LabeledContent(t("玻璃透明度", "Glass Transparency")) {
                     HStack(spacing: 12) {
                         Slider(value: $preferences.values.glassTransparency, in: 0.15...0.85)
-                            .frame(width: 220)
+                            .frame(maxWidth: 260)
                             .disabled(!preferences.values.glassEffectEnabled)
                         Text("\(Int(preferences.values.glassTransparency * 100))%")
                             .monospacedDigit()
@@ -1110,16 +1404,16 @@ struct AppearanceSettingsView: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
-                PreferenceSupportingText(t(
-                    "适用于设置与翻译窗口。系统支持时自动使用原生玻璃材质；文字与控件始终保持清晰。",
-                    "Applies to Settings and translation windows. Native glass material is used when supported; text and controls remain opaque."
+                Text(t(
+                    "macOS 26 及更高版本的设置窗口由系统统一呈现液态玻璃；此开关与透明度主要控制翻译窗口，并为旧系统提供降级效果。",
+                    "On macOS 26 and later, Settings uses the system Liquid Glass appearance. These controls primarily affect the translation window and provide the fallback effect on older systems."
                 ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .controlSize(.regular)
-            .frame(maxWidth: 700)
-            .padding(.horizontal, 26)
-            .padding(.vertical, 20)
         }
+        .formStyle(.grouped)
+        .controlSize(.regular)
     }
 
     private func t(_ zh: String, _ en: String) -> String {
@@ -1169,9 +1463,9 @@ struct AboutView: View {
                     }
                 }
             }
-            .formStyle(.columns)
+            .formStyle(.grouped)
             .controlSize(.regular)
-            .frame(width: 520)
+            .frame(maxWidth: 620)
             .padding(.top, 14)
 
             Label(

@@ -126,10 +126,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let controller = NSHostingController(rootView: SettingsView())
         let window = NSWindow(contentViewController: controller)
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 900, height: 620))
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.setContentSize(NSSize(width: 980, height: 650))
         window.minSize = NSSize(width: 836, height: 560)
         window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .automatic
+        window.isMovableByWindowBackground = true
         window.center()
         window.isReleasedWhenClosed = false
         self.settingsWindow = window
