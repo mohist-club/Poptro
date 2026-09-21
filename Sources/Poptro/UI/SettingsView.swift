@@ -39,24 +39,20 @@ struct SettingsView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        TabView(selection: $destination) {
-            GeneralSettingsView()
-                .tabItem { Label(SettingsDestination.general.title(language), systemImage: SettingsDestination.general.icon) }
-                .tag(SettingsDestination.general)
-            ShortcutSettingsView()
-                .tabItem { Label(SettingsDestination.shortcuts.title(language), systemImage: SettingsDestination.shortcuts.icon) }
-                .tag(SettingsDestination.shortcuts)
-            ServicesSettingsView()
-                .tabItem { Label(SettingsDestination.services.title(language), systemImage: SettingsDestination.services.icon) }
-                .tag(SettingsDestination.services)
-            AdvancedSettingsView()
-                .tabItem { Label(SettingsDestination.advanced.title(language), systemImage: SettingsDestination.advanced.icon) }
-                .tag(SettingsDestination.advanced)
-            AboutView()
-                .tabItem { Label(SettingsDestination.about.title(language), systemImage: SettingsDestination.about.icon) }
-                .tag(SettingsDestination.about)
+        VStack(spacing: 0) {
+            SafariSettingsToolbar(selection: $destination, language: language)
+            Divider()
+            Group {
+                switch destination {
+                case .general: GeneralSettingsView()
+                case .shortcuts: ShortcutSettingsView()
+                case .services: ServicesSettingsView()
+                case .advanced: AdvancedSettingsView()
+                case .about: AboutView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .tabViewStyle(.automatic)
         .background {
             SettingsSurfaceBackground(
                 isEnabled: preferences.values.glassEffectEnabled,
@@ -68,6 +64,54 @@ struct SettingsView: View {
         .background(AppleTranslationBridgeContainer())
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
+    }
+}
+
+private struct SafariSettingsToolbar: View {
+    @Binding var selection: SettingsDestination
+    let language: InterfaceLanguage
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(SettingsDestination.allCases) { destination in
+                Button {
+                    selection = destination
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: destination.icon)
+                            .symbolRenderingMode(.monochrome)
+                            .font(.system(size: 22, weight: .regular))
+                            .frame(width: 28, height: 25)
+                        Text(destination.title(language))
+                            .font(.system(size: 11, weight: .regular))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .foregroundStyle(selection == destination ? Color.accentColor : Color.secondary)
+                    .frame(width: 56, height: 49)
+                    .background {
+                        if selection == destination {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.76))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.6)
+                                }
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(destination.title(language))
+                .accessibilityAddTraits(selection == destination ? .isSelected : [])
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.top, 7)
+        .padding(.bottom, 6)
+        .frame(height: 63)
+        .background(.bar)
     }
 }
 
