@@ -127,8 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NSHostingController(rootView: SettingsView())
         let window = NSWindow(contentViewController: controller)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 1200, height: 800))
-        window.minSize = NSSize(width: 1080, height: 700)
+        window.setContentSize(NSSize(width: 900, height: 620))
+        window.minSize = NSSize(width: 836, height: 560)
+        window.titlebarAppearsTransparent = true
         window.center()
         window.isReleasedWhenClosed = false
         self.settingsWindow = window

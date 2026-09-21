@@ -3,7 +3,7 @@ import KeyboardShortcuts
 import ServiceManagement
 import SwiftUI
 
-private enum SettingsDestination: String, CaseIterable, Identifiable {
+enum SettingsDestination: String, CaseIterable, Identifiable {
     case general, shortcuts, services, advanced, about
     var id: String { rawValue }
 
@@ -30,84 +30,76 @@ private enum SettingsDestination: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
-    @State private var destination: SettingsDestination? = .general
+    @State private var destination: SettingsDestination
+
+    init(initialDestination: SettingsDestination = .general) {
+        _destination = State(initialValue: initialDestination)
+    }
 
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsIconToolbar(selection: $destination, language: language)
-            Divider()
-            Group {
-                switch destination ?? .general {
-                case .general: GeneralSettingsView()
-                case .shortcuts: ShortcutSettingsView()
-                case .services: ServicesSettingsView()
-                case .advanced: AdvancedSettingsView()
-                case .about: AboutView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        TabView(selection: $destination) {
+            GeneralSettingsView()
+                .tabItem { Label(SettingsDestination.general.title(language), systemImage: SettingsDestination.general.icon) }
+                .tag(SettingsDestination.general)
+            ShortcutSettingsView()
+                .tabItem { Label(SettingsDestination.shortcuts.title(language), systemImage: SettingsDestination.shortcuts.icon) }
+                .tag(SettingsDestination.shortcuts)
+            ServicesSettingsView()
+                .tabItem { Label(SettingsDestination.services.title(language), systemImage: SettingsDestination.services.icon) }
+                .tag(SettingsDestination.services)
+            AdvancedSettingsView()
+                .tabItem { Label(SettingsDestination.advanced.title(language), systemImage: SettingsDestination.advanced.icon) }
+                .tag(SettingsDestination.advanced)
+            AboutView()
+                .tabItem { Label(SettingsDestination.about.title(language), systemImage: SettingsDestination.about.icon) }
+                .tag(SettingsDestination.about)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .frame(minWidth: 1080, minHeight: 700)
+        .tabViewStyle(.automatic)
+        .background {
+            SettingsSurfaceBackground(
+                isEnabled: preferences.values.glassEffectEnabled,
+                transparency: preferences.values.glassTransparency
+            )
+                .ignoresSafeArea()
+        }
+        .frame(minWidth: 836, minHeight: 560)
         .background(AppleTranslationBridgeContainer())
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
     }
 }
 
-private struct SettingsIconToolbar: View {
-    @Binding var selection: SettingsDestination?
-    let language: InterfaceLanguage
+private struct SettingsSurfaceBackground: View {
+    let isEnabled: Bool
+    let transparency: Double
 
     var body: some View {
-        HStack(spacing: 42) {
-            ForEach(SettingsDestination.allCases) { item in
-                Button {
-                    selection = item
-                } label: {
-                    VStack(spacing: 7) {
-                        Image(systemName: item.icon)
-                            .symbolRenderingMode(.monochrome)
-                            .font(.system(size: 27, weight: .regular))
-                            .frame(width: 48, height: 34)
-                        Text(item.title(language))
-                            .font(.system(size: 13, weight: selection == item ? .semibold : .regular))
-                    }
-                    .foregroundStyle(selection == item ? Color.accentColor : Color.secondary)
-                    .frame(width: 104, height: 78)
-                    .background(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(selection == item ? Color.accentColor.opacity(0.09) : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .stroke(selection == item ? Color.accentColor.opacity(0.14) : Color.clear, lineWidth: 0.7)
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title(language))
-                .accessibilityAddTraits(selection == item ? .isSelected : [])
+        if isEnabled {
+            ZStack {
+                SettingsMaterialBackground()
+                Color(nsColor: .windowBackgroundColor)
+                    .opacity(max(0.08, 1 - transparency))
             }
+        } else {
+            Color(nsColor: .windowBackgroundColor)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 30)
-        .frame(height: 136, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.96))
     }
 }
 
-private struct SettingsPageHeader: View {
-    let title: String
-    let subtitle: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.title2.weight(.semibold))
-            Text(subtitle).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 8)
+private struct SettingsMaterialBackground: NSViewRepresentable {
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = .underWindowBackground
+        view.isEmphasized = false
     }
 }
 
@@ -123,64 +115,56 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            VStack(spacing: 6) {
                 PreferenceRow(t("开机时启动", "Launch at Login")) {
-                    HStack(spacing: 8) {
-                        Toggle("", isOn: $launchAtLogin)
-                            .labelsHidden()
-                            .toggleStyle(.checkbox)
-                            .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
-                        Text(t("开启", "On"))
-                    }
+                    Toggle(t("开启", "On"), isOn: $launchAtLogin)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
                 }
                 PreferenceRow(t("划词翻译快捷键", "Selection Translation Shortcut")) {
                     ShortcutRecorderView(name: .translateSelection)
-                        .frame(width: 300)
+                        .frame(width: 260)
                 }
                 if let launchAtLoginError {
                     PreferenceSupportingText(launchAtLoginError, color: .red)
                 }
 
-                PreferenceDivider()
+                PreferenceSectionGap()
 
                 PreferenceRow(t("界面语言", "Interface Language")) {
                     Picker("", selection: $preferences.values.interfaceLanguage) {
                         ForEach(InterfaceLanguage.allCases) { Text($0.nativeDisplayName).tag($0) }
                     }
                     .labelsHidden()
-                    .frame(width: 300)
+                    .frame(width: 260)
                 }
                 PreferenceRow(t("外观", "Appearance")) {
                     Picker("", selection: $preferences.values.appearanceMode) {
                         ForEach(PanelAppearanceMode.allCases) { Text($0.localizedName(language: language)).tag($0) }
                     }
                     .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 300)
+                    .frame(width: 260)
                 }
                 PreferenceRow(t("窗口玻璃效果", "Window Glass Effect")) {
-                    HStack(spacing: 8) {
-                        Toggle("", isOn: $preferences.values.glassEffectEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.checkbox)
-                        Text(t("开启", "On"))
-                    }
+                    Toggle(t("开启", "On"), isOn: $preferences.values.glassEffectEnabled)
+                        .toggleStyle(.checkbox)
                 }
                 PreferenceSupportingText(t(
                     "外观设置适用于所有 Poptro 窗口。",
                     "Appearance settings apply to every Poptro window."
                 ))
 
-                PreferenceDivider()
+                PreferenceSectionGap()
 
                 PreferenceRow(t("所需权限", "Required Permission"), alignment: .top) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            PermissionBadge(
-                                title: t("辅助功能", "Accessibility"),
-                                isGranted: accessibilityGranted
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 8) {
+                            Label(
+                                accessibilityGranted ? t("辅助功能已允许", "Accessibility Allowed") : t("辅助功能未允许", "Accessibility Not Allowed"),
+                                systemImage: accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                             )
-                            Button(t("前往系统设置", "Open System Settings")) {
+                            .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+                            Button(t("前往系统设置…", "Open System Settings…")) {
                                 PermissionManager.shared.openSystemPreferencesAccessibilityPane()
                             }
                         }
@@ -193,7 +177,7 @@ struct GeneralSettingsView: View {
                     }
                 }
 
-                PreferenceDivider()
+                PreferenceSectionGap()
 
                 PreferenceRow(t("默认翻译服务", "Default Translation Service")) {
                     Picker("", selection: defaultProviderBinding) {
@@ -202,7 +186,7 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 300)
+                    .frame(width: 260)
                 }
                 PreferenceRow(t("默认目标语言", "Default Target Language")) {
                     Picker("", selection: primaryLanguageBinding) {
@@ -211,18 +195,14 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 300)
+                    .frame(width: 260)
                 }
                 PreferenceRow(t("自动检查更新", "Automatically Check for Updates")) {
-                    HStack(spacing: 8) {
-                        Toggle("", isOn: $preferences.values.automaticUpdateChecks)
-                            .labelsHidden()
-                            .toggleStyle(.checkbox)
-                        Text(t("开启", "On"))
-                    }
+                    Toggle(t("开启", "On"), isOn: $preferences.values.automaticUpdateChecks)
+                        .toggleStyle(.checkbox)
                 }
 
-                PreferenceDivider()
+                PreferenceSectionGap()
 
                 PreferenceRow(t("帮助与反馈", "Help & Feedback"), alignment: .top) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -236,9 +216,11 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1020)
-            .padding(.horizontal, 34)
-            .padding(.vertical, 24)
+            .controlSize(.regular)
+            .frame(maxWidth: 680)
+            .padding(.horizontal, 26)
+            .padding(.top, 20)
+            .padding(.bottom, 22)
         }
         .onAppear {
             accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
@@ -286,19 +268,19 @@ private struct PreferenceRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: alignment, spacing: 30) {
+        HStack(alignment: alignment, spacing: 12) {
             Text(label + "：")
-                .font(.system(size: 14))
-                .frame(width: 250, alignment: .trailing)
+                .font(.system(size: 13))
+                .frame(width: 220, alignment: .trailing)
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(minHeight: 52)
+        .frame(minHeight: 34)
     }
 }
 
-private struct PreferenceDivider: View {
-    var body: some View { Divider().padding(.vertical, 10) }
+private struct PreferenceSectionGap: View {
+    var body: some View { Color.clear.frame(height: 12) }
 }
 
 private struct PreferenceSupportingText: View {
@@ -311,31 +293,12 @@ private struct PreferenceSupportingText: View {
     }
 
     var body: some View {
-        HStack(spacing: 30) {
-            Color.clear.frame(width: 250, height: 1)
+        HStack(spacing: 12) {
+            Color.clear.frame(width: 220, height: 1)
             Text(text).font(.caption).foregroundStyle(color)
             Spacer()
         }
-        .padding(.top, -8)
-    }
-}
-
-private struct PermissionBadge: View {
-    let title: String
-    let isGranted: Bool
-
-    var body: some View {
-        Label(title, systemImage: isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(isGranted ? Color.primary : Color.orange)
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(isGranted ? Color.green : Color.orange, Color.primary)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.055))
-            )
+        .padding(.top, -5)
     }
 }
 
@@ -347,12 +310,8 @@ struct ShortcutSettingsView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsPageHeader(
-                title: t("快捷键", "Shortcuts"),
-                subtitle: t("设置全局翻译快捷键和应用启动快捷键。", "Configure global translation and app launch shortcuts.")
-            )
-            Form {
+        VStack(spacing: 0) {
+            List {
                 Section(t("内置快捷键", "Built-in Shortcut")) {
                     HStack(spacing: 12) {
                         Image(systemName: "character.cursor.ibeam").frame(width: 24)
@@ -362,8 +321,10 @@ struct ShortcutSettingsView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        ShortcutRecorderView(name: .translateSelection).frame(width: 120)
-                        Toggle("", isOn: $translateShortcutEnabled).labelsHidden()
+                        ShortcutRecorderView(name: .translateSelection).frame(width: 150)
+                        Toggle("", isOn: $translateShortcutEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.checkbox)
                             .onChange(of: translateShortcutEnabled) { HotkeyManager.shared.setTranslationEnabled($0) }
                         Label(t("内置", "Built-in"), systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                     }
@@ -377,21 +338,31 @@ struct ShortcutSettingsView: View {
                                 Text(t("打开应用", "Open App")).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 120)
+                            ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 150)
                             Toggle("", isOn: Binding(
                                 get: { launcher.bindings.first(where: { $0.id == binding.id })?.isEnabled ?? false },
                                 set: { launcher.setEnabled($0, for: binding) }
-                            )).labelsHidden()
+                            )).labelsHidden().toggleStyle(.checkbox)
                             Button(role: .destructive) { launcher.removeBinding(binding) } label: { Image(systemName: "minus.circle") }
                                 .buttonStyle(.borderless).help(t("删除快捷键", "Remove Shortcut"))
                         }
                     }
-                    Button { showingAppPicker = true } label: { Label(t("添加应用快捷键", "Add App Shortcut"), systemImage: "plus") }
                 }
             }
-            .formStyle(.grouped)
+            .listStyle(.inset)
+            Divider()
+            HStack {
+                Button { showingAppPicker = true } label: {
+                    Label(t("添加应用快捷键", "Add App Shortcut"), systemImage: "plus")
+                }
+                Spacer()
+                Text(t("所有快捷键均可随时修改。", "All shortcuts can be changed at any time."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
         }
-        .padding(24)
         .sheet(isPresented: $showingAppPicker) { AppPickerView(isPresented: $showingAppPicker) }
     }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
@@ -451,43 +422,48 @@ struct ServicesSettingsView: View {
 
     var body: some View {
         HSplitView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(t("翻译服务", "Translation Services"))
-                    .font(.title2.weight(.semibold)).padding(.horizontal, 12).padding(.top, 16)
-                Text(t("选择服务进行查看；默认服务仅可设置一个。", "Select a service to inspect; only one can be the default."))
-                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-                Menu {
-                    ForEach(addableProviders) { provider in
-                        Button {
-                            selectedProvider = provider
-                        } label: {
-                            Label(providerListName(provider), systemImage: providerIcon(provider))
+            VStack(spacing: 0) {
+                List(selection: $selectedProvider) {
+                    Section(t("翻译服务", "Translation Services")) {
+                        ForEach(displayedProviders) { provider in
+                            providerRow(provider).tag(provider)
                         }
                     }
-                } label: {
-                    Label(t("添加服务", "Add Service"), systemImage: "plus")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .padding(.horizontal, 12)
-                .disabled(addableProviders.isEmpty)
-
-                List(displayedProviders, selection: $selectedProvider) { provider in
-                    providerRow(provider).tag(provider)
                 }
                 .listStyle(.sidebar)
+                Divider()
+                HStack {
+                    Menu {
+                        ForEach(addableProviders) { provider in
+                            Button {
+                                selectedProvider = provider
+                            } label: {
+                                Label(providerListName(provider), systemImage: providerIcon(provider))
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help(t("添加服务", "Add Service"))
+                    .disabled(addableProviders.isEmpty)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 34)
             }
-            .frame(minWidth: 250, idealWidth: 280, maxWidth: 320)
+            .frame(minWidth: 210, idealWidth: 230, maxWidth: 260)
 
             VStack(spacing: 0) {
+                providerHeader
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                Divider()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        providerHeader
-                        providerForm
-                    }
-                    .frame(maxWidth: 760, alignment: .leading)
-                    .padding(24)
+                    providerForm
+                        .frame(width: 520)
                 }
+                .frame(maxWidth: .infinity)
                 Divider()
                 HStack(spacing: 12) {
                     if isLoadingModels || isBenchmarking { ProgressView().controlSize(.small) }
@@ -502,9 +478,9 @@ struct ServicesSettingsView: View {
                     Button(t("保存", "Save")) { persist() }.keyboardShortcut("s", modifiers: .command)
                     if showSaved { Text(t("已保存", "Saved")).font(.caption).foregroundStyle(.green) }
                 }
-                .padding(.horizontal, 20).padding(.vertical, 12)
+                .padding(.horizontal, 14).padding(.vertical, 9)
             }
-            .frame(minWidth: 520)
+            .frame(minWidth: 560)
         }
         .onAppear { loadLocalValues() }
         .onChange(of: selectedProvider) { _ in
@@ -514,52 +490,58 @@ struct ServicesSettingsView: View {
     }
 
     private func providerRow(_ provider: TranslationProvider) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: providerIcon(provider)).frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(providerListName(provider)).lineLimit(1)
-                    if provider == settings.provider {
-                        Label(t("默认", "Default"), systemImage: "star.fill")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                Text(recommendedModel(for: provider))
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
+        HStack(spacing: 8) {
+            Label(providerListName(provider), systemImage: providerIcon(provider))
+                .lineLimit(1)
             Spacer(minLength: 4)
-            Circle().fill(statusColor(for: provider)).frame(width: 7, height: 7)
+            if provider == settings.provider {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(t("默认服务", "Default Service"))
+            }
             Text(providerStatusText(provider))
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
     }
 
     private var providerHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsPageHeader(
-                title: selectedProvider.localizedDisplayName(language: language),
-                subtitle: providerDetailSubtitle(selectedProvider)
-            )
-            HStack(spacing: 12) {
-                Circle().fill(statusColor(for: selectedProvider)).frame(width: 9, height: 9)
-                Text(providerStatusLongText(selectedProvider)).font(.callout)
-                Divider().frame(height: 18)
-                Text(t("当前默认：", "Current default: ") + settings.provider.localizedDisplayName(language: language))
-                    .font(.callout).foregroundStyle(.secondary)
-                Spacer()
-                if selectedProvider == settings.provider {
-                    Label(t("默认服务", "Default Service"), systemImage: "star.fill")
-                        .font(.callout).foregroundStyle(.secondary)
-                } else {
-                    Button(t("设为默认服务", "Set as Default")) { setDefaultProvider() }
-                        .disabled(selectedProvider == .apple && !AppleTranslationSupport.isAvailable)
-                }
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectedProvider.localizedDisplayName(language: language))
+                    .font(.headline)
+                Text(providerDetailSubtitle(selectedProvider))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Label(providerStatusLongText(selectedProvider), systemImage: statusIcon(for: selectedProvider))
+                    .font(.caption)
+                    .foregroundStyle(statusColor(for: selectedProvider))
+                    .lineLimit(1)
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.09), lineWidth: 0.7))
+            Spacer()
+            if selectedProvider == settings.provider {
+                Label(t("默认服务", "Default Service"), systemImage: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button(t("设为默认", "Set as Default")) { setDefaultProvider() }
+                    .disabled(selectedProvider == .apple && !AppleTranslationSupport.isAvailable)
+            }
         }
+    }
+
+    private func statusIcon(for provider: TranslationProvider) -> String {
+        if let result = benchmarks[provider] {
+            return result.isSuccessful ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        }
+        if provider == .apple, AppleTranslationSupport.isAvailable {
+            return "checkmark.circle.fill"
+        }
+        if provider.requiresAPIKey, keyBindingValue(provider).isEmpty {
+            return "exclamationmark.triangle.fill"
+        }
+        return "circle.dashed"
     }
 
     @ViewBuilder private var providerForm: some View {
@@ -576,15 +558,18 @@ struct ServicesSettingsView: View {
                             : t("需要 macOS 15 或更高版本", "Requires macOS 15 or later")
                     )
                     Text(t(
-                        "首次使用某个语言组合时，macOS 可能会请求下载翻译模型。下载后可离线翻译。",
-                        "The first use of a language pair may ask to download translation models. Translation works offline afterward."
+                        "首次使用语言组合时，macOS 可能会下载离线模型。",
+                        "macOS may download an offline model the first time a language pair is used."
                     ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
             } else if selectedProvider != .ollama {
                 Section(t("连接", "Connection")) {
-                    SecureField(t("API Key", "API Key"), text: keyBinding(for: selectedProvider))
+                    LabeledContent("API Key") {
+                        SecureField("", text: keyBinding(for: selectedProvider))
+                            .frame(width: 300)
+                    }
                     if selectedProvider == .zhipu {
                         LabeledContent(t("接口地址", "Endpoint"), value: "open.bigmodel.cn/api/paas/v4")
                     } else if selectedProvider == .groq {
@@ -598,7 +583,10 @@ struct ServicesSettingsView: View {
             } else {
                 Section(t("连接", "Connection")) {
                     LabeledContent(t("服务名称", "Service Name"), value: "Ollama")
-                    TextField("Base URL", text: $settings.ollamaBaseURL)
+                    LabeledContent("Base URL") {
+                        TextField("", text: $settings.ollamaBaseURL)
+                            .frame(width: 300)
+                    }
                     LabeledContent(t("请求超时", "Timeout"), value: t("60 秒", "60 seconds"))
                 }
             }
@@ -614,13 +602,13 @@ struct ServicesSettingsView: View {
                     }
                     LabeledContent(
                         t("快速翻译", "Fast Translation"),
-                        value: t("低延迟，所有支持 Apple 翻译的 Mac", "Low latency; all Macs with Apple Translation")
+                        value: t("低延迟 · 本机离线", "Low latency · On device")
                     )
                     LabeledContent(
                         t("高质量翻译", "High-Quality Translation"),
                         value: AppleTranslationSupport.supportsTranslationStrategies
-                            ? t("Apple Intelligence（当前可用）", "Apple Intelligence (available)")
-                            : t("需要 macOS 26.4 或更高版本", "Requires macOS 26.4 or later")
+                            ? "Apple Intelligence"
+                            : t("需要 macOS 26.4+", "Requires macOS 26.4+")
                     )
                 }
             } else if selectedProvider != .deepl {
@@ -661,12 +649,15 @@ struct ServicesSettingsView: View {
                         .disabled(isBenchmarking || isLoadingModels)
                     Text(t(
                         selectedProvider == .apple
-                            ? "测速使用本机 Apple 翻译模型，不消耗 API 额度。"
+                            ? "使用本机模型测速，不消耗 API 额度。"
                             : "测速会实际发送一段短文本，并消耗少量额度。",
                         selectedProvider == .apple
-                            ? "The speed test uses the on-device Apple model and consumes no API quota."
+                            ? "Uses the on-device model and no API quota."
                             : "The speed test sends a short translation and uses a small amount of quota."
-                    )).font(.caption).foregroundStyle(.secondary)
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 }
             }
 
@@ -685,7 +676,9 @@ struct ServicesSettingsView: View {
             }
 
         }
-        .formStyle(.grouped)
+        .formStyle(.columns)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var displayedProviders: [TranslationProvider] {
@@ -885,11 +878,11 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            VStack(spacing: 6) {
                 PreferenceRow(t("玻璃透明度", "Glass Transparency")) {
                     HStack(spacing: 12) {
                         Slider(value: $preferences.values.glassTransparency, in: 0.15...0.85)
-                            .frame(width: 260)
+                            .frame(width: 220)
                             .disabled(!preferences.values.glassEffectEnabled)
                         Text("\(Int(preferences.values.glassTransparency * 100))%")
                             .monospacedDigit()
@@ -902,21 +895,22 @@ struct AdvancedSettingsView: View {
                     "Higher values make the window material more transparent; text and controls remain fully opaque."
                 ))
 
-                PreferenceDivider()
+                PreferenceSectionGap()
 
                 PreferenceRow(t("翻译系统提示词", "Translation System Prompt"), alignment: .top) {
                     VStack(alignment: .leading, spacing: 10) {
                         TextEditor(text: $settings.customSystemPrompt)
                             .font(.system(size: 13))
-                            .frame(minHeight: 210)
-                            .padding(6)
+                            .frame(width: 360)
+                            .frame(minHeight: 180)
+                            .padding(5)
                             .background(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
                                     .fill(Color(nsColor: .textBackgroundColor))
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.12), lineWidth: 0.7)
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.6)
                             )
                         Text(t(
                             "仅影响 AI 模型的风格与格式；翻译方向仍由 Poptro 自动判断。Apple 翻译与 DeepL 不使用此提示词。",
@@ -940,9 +934,10 @@ struct AdvancedSettingsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1020)
-            .padding(.horizontal, 34)
-            .padding(.vertical, 24)
+            .controlSize(.regular)
+            .frame(maxWidth: 700)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 20)
         }
         .onAppear { settings = TranslationSettings.loadCurrent() }
     }
@@ -963,63 +958,62 @@ struct AboutView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsPageHeader(title: t("关于", "About"), subtitle: t("版本信息、更新与项目链接。", "Version, updates and project links."))
+        VStack(spacing: 0) {
+            Spacer(minLength: 22)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 44, height: 44)
+            Text("Poptro")
+                .font(.headline)
+                .padding(.top, 7)
+            Text(t("版本", "Version") + " " + version)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+
             Form {
                 Section {
-                    HStack(spacing: 14) {
-                        Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 52, height: 52)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Poptro").font(.headline)
-                            Text(t("轻量的划词翻译与快捷启动工具", "A lightweight selection translator and app launcher"))
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(t("版本", "Version") + " " + version).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                Section(t("应用信息", "Application Information")) {
                     LabeledContent(t("开发者", "Developer"), value: "Wayne")
                     LabeledContent(t("开源协议", "License"), value: "MIT License")
                     LabeledContent(t("系统要求", "System Requirements"), value: t("macOS 13 或更高版本", "macOS 13 or later"))
                 }
-                Section(t("更新设置", "Update Settings")) {
+                Section {
                     Toggle(t("自动检查更新", "Automatically Check for Updates"), isOn: $preferences.values.automaticUpdateChecks)
+                        .toggleStyle(.checkbox)
                     LabeledContent(t("更新来源", "Update Source"), value: "GitHub Releases")
-                    HStack {
+                    LabeledContent(t("软件更新", "Software Update")) {
                         Button(t("检查更新…", "Check for Updates…")) { AutoUpdater.checkForUpdates() }
-                        Spacer()
                     }
                 }
-                Section(t("相关链接", "Links")) {
-                    Link(destination: URL(string: "https://github.com/mohist-club/Poptro/releases")!) {
-                        HStack {
-                            Text(t("GitHub 开源地址", "GitHub Open Source"))
-                            Spacer()
-                            Text("github.com/mohist-club/Poptro").foregroundStyle(.secondary)
-                            Image(systemName: "arrow.up.right.square")
-                        }
+                Section {
+                    LabeledContent(t("开源项目", "Open Source")) {
+                        Link("github.com/mohist-club/Poptro", destination: URL(string: "https://github.com/mohist-club/Poptro/releases")!)
                     }
-                    Link(destination: URL(string: "https://moaclab.com/t/topic/2638")!) {
-                        HStack {
-                            Text(t("网站社区", "Community"))
-                            Spacer()
-                            Text("moaclab.com/t/topic/2638").foregroundStyle(.secondary)
-                            Image(systemName: "arrow.up.right.square")
-                        }
+                    LabeledContent(t("网站社区", "Community")) {
+                        Link("moaclab.com/t/topic/2638", destination: URL(string: "https://moaclab.com/t/topic/2638")!)
                     }
                 }
-            }.formStyle(.grouped)
-            HStack(spacing: 7) {
-                Image(systemName: "lock.fill")
-                Text(t(
-                    "API Key 与个人配置仅保存在当前 Mac，并在本地加密。",
-                    "API keys and personal settings stay encrypted on this Mac."
-                ))
             }
-            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.top, 8)
+            .formStyle(.columns)
+            .controlSize(.regular)
+            .frame(width: 520)
+            .padding(.top, 14)
+
+            Label(
+                t("API Key 与个人配置仅保存在当前 Mac，并在本地加密。", "API keys and personal settings stay encrypted on this Mac."),
+                systemImage: "lock.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.top, 12)
             Text("© 2026 Wayne. Poptro is open source software.")
-                .font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 18).padding(.top, 8)
-        }.padding(24)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 5)
+            Spacer(minLength: 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
