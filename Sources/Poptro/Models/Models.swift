@@ -29,6 +29,7 @@ struct LaunchBinding: Codable, Identifiable, Equatable {
 
 /// 翻译服务商
 enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
+    case apple
     case zhipu
     case openai
     case deepl
@@ -42,6 +43,7 @@ enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
     /// 设置界面的下拉菜单会自动列出所有 case,不需要改 UI 代码。
     var displayName: String {
         switch self {
+        case .apple: return "Apple 翻译(本地免费)"
         case .zhipu: return "智谱 GLM(默认,免费模型)"
         case .openai: return "OpenAI(GPT 系列)"
         case .deepl: return "DeepL"
@@ -51,14 +53,23 @@ enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var requiresAPIKey: Bool { self != .ollama }
+    var requiresAPIKey: Bool { self != .ollama && self != .apple }
 
     var supportsRemoteModelDiscovery: Bool {
         switch self {
-        case .deepl: return false
+        case .apple, .deepl: return false
         default: return true
         }
     }
+}
+
+/// Apple Translation 在 macOS 26.4 起支持显式选择传统低延迟模型
+/// 或 Apple Intelligence 高保真模型。旧系统仍可用 Apple 翻译，但只能使用低延迟模式。
+enum AppleTranslationMode: String, Codable, CaseIterable, Identifiable {
+    case lowLatency
+    case highFidelity
+
+    var id: String { rawValue }
 }
 
 /// 弹窗外观:浅色/深色是强制指定(不管系统当前是什么模式),跟随系统则由系统决定
@@ -173,6 +184,7 @@ struct TranslationSettings: Codable {
     var zhipuModel: String = "glm-4-flash-250414"
     var groqModel: String = "qwen/qwen3.8-27b"
     var googleModel: String = "gemini-3.5-flash-lite"
+    var appleTranslationMode: AppleTranslationMode = .lowLatency
 
     // 只负责"风格/格式"规则,方向(翻成哪种语言)在发请求时由代码明确指定,
     // 这里不再包含"自动判断中英方向"这句话——之前这句话和运行时追加的强制方向指令冲突,
@@ -216,6 +228,10 @@ struct TranslationSettings: Codable {
         zhipuModel = try c.decodeIfPresent(String.self, forKey: .zhipuModel) ?? "glm-4-flash-250414"
         groqModel = try c.decodeIfPresent(String.self, forKey: .groqModel) ?? "qwen/qwen3.8-27b"
         googleModel = try c.decodeIfPresent(String.self, forKey: .googleModel) ?? "gemini-3.5-flash-lite"
+        appleTranslationMode = try c.decodeIfPresent(
+            AppleTranslationMode.self,
+            forKey: .appleTranslationMode
+        ) ?? .lowLatency
         customSystemPrompt = try c.decodeIfPresent(String.self, forKey: .customSystemPrompt)
             ?? TranslationSettings().customSystemPrompt
         primaryLanguageCode = try c.decodeIfPresent(String.self, forKey: .primaryLanguageCode) ?? "ZH"
@@ -231,6 +247,18 @@ struct TranslationSettings: Codable {
     static func loadCurrent() -> TranslationSettings {
         var settings = LocalStore.load(TranslationSettings.self, filename: filename, default: TranslationSettings())
         var configured = settings.configuredProviders
+
+        // Apple 翻译不需要 Key；在系统支持时始终视为可用服务。
+        if AppleTranslationSupport.isAvailable {
+            configured.insert(.apple)
+        } else {
+            configured.remove(.apple)
+        }
+        if settings.appleTranslationMode == .highFidelity,
+           !AppleTranslationSupport.supportsTranslationStrategies {
+            settings.appleTranslationMode = .lowLatency
+            settings.save()
+        }
 
         // 兼容旧版本：已经保存过 API Key 的服务直接迁移为“已配置”。
         for provider in TranslationProvider.allCases where provider.requiresAPIKey {
@@ -265,6 +293,9 @@ struct TranslationSettings: Codable {
     func availableConfiguredProviders() -> [TranslationProvider] {
         TranslationProvider.allCases.filter { provider in
             guard configuredProviders.contains(provider) else { return false }
+            if provider == .apple {
+                return AppleTranslationSupport.isAvailable
+            }
             if provider == .ollama {
                 return !ollamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && !ollamaModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -281,6 +312,8 @@ struct TranslationSettings: Codable {
 
     func model(for provider: TranslationProvider) -> String {
         switch provider {
+        case .apple:
+            return appleTranslationMode == .lowLatency ? "Apple Low Latency" : "Apple High Fidelity"
         case .zhipu: return zhipuModel
         case .openai: return model
         case .groq: return groqModel
@@ -292,6 +325,8 @@ struct TranslationSettings: Codable {
 
     mutating func setModel(_ value: String, for provider: TranslationProvider) {
         switch provider {
+        case .apple:
+            appleTranslationMode = value == "Apple High Fidelity" ? .highFidelity : .lowLatency
         case .zhipu: zhipuModel = value
         case .openai: model = value
         case .groq: groqModel = value

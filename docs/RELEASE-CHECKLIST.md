@@ -98,6 +98,8 @@ ad-hoc 版本中 `TeamIdentifier=not set` 是预期结果；它不等于 Develop
 
 ### 服务
 
+- [ ] macOS 15+ 上 Apple 翻译可用，首次模型下载授权可正常展示。
+- [ ] macOS 26.4+ 上 Apple 快速/高质量两种模式均可翻译。
 - [ ] 只显示已配置服务。
 - [ ] 唯一默认服务正确。
 - [ ] 切换服务会重新翻译当前文本。
@@ -140,4 +142,3 @@ gh release view vX.Y.Z --json url,isDraft,isPrerelease,assets
 - [ ] Release 页面和 README 的下载入口正确。
 - [ ] 本地正式源码目录快进同步到发布提交。
 - [ ] 若出现高成本问题，将根因和标准解法补充到排障文档。
-

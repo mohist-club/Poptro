@@ -91,6 +91,22 @@ enum ProviderBenchmarkService {
         }
 
         switch provider {
+        case .apple:
+            guard #available(macOS 15.0, *) else {
+                onComplete(NSError(
+                    domain: "Poptro.AppleTranslation",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Apple 翻译需要 macOS 15 或更高版本。"]
+                ))
+                return
+            }
+            AppleTranslationService.shared.translate(
+                text: sampleText,
+                targetLanguageCode: "ZH",
+                mode: settings.appleTranslationMode,
+                onToken: onToken,
+                onComplete: onComplete
+            )
         case .zhipu, .openai, .groq:
             TranslationService.shared.translateStreaming(
                 text: sampleText,

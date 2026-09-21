@@ -145,6 +145,22 @@ final class TranslationFlowCoordinator {
         }
 
         switch settings.provider {
+        case .apple:
+            guard #available(macOS 15.0, *) else {
+                onComplete(NSError(
+                    domain: "Poptro.AppleTranslation",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Apple 翻译需要 macOS 15 或更高版本。"]
+                ))
+                return
+            }
+            AppleTranslationService.shared.translate(
+                text: text,
+                targetLanguageCode: targetLanguageCode,
+                mode: settings.appleTranslationMode,
+                onToken: onToken,
+                onComplete: onComplete
+            )
         case .zhipu, .openai, .groq:
             TranslationService.shared.translateStreaming(
                 text: text, settings: settings, provider: settings.provider,

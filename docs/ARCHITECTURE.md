@@ -24,6 +24,7 @@ TranslationFlowCoordinator   翻译流程唯一编排入口
 ├── TextCaptureService       AX 取词 → 模拟复制兜底
 ├── LanguageDetector         识别源语言并选择目标语言
 ├── TranslationService       OpenAI 兼容流式接口
+├── AppleTranslationService  Apple 本地翻译与 SwiftUI session 桥接
 ├── DeepLService             DeepL 接口
 ├── GoogleAIService          Gemini 接口
 ├── OllamaService            本地模型接口

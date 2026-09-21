@@ -52,6 +52,7 @@ struct SettingsView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 900, minHeight: 600)
+        .background(AppleTranslationBridgeContainer())
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
     }
@@ -340,6 +341,7 @@ struct ServicesSettingsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 } else {
                     Button(t("设为默认服务", "Set as Default")) { setDefaultProvider() }
+                        .disabled(selectedProvider == .apple && !AppleTranslationSupport.isAvailable)
                 }
             }
             .padding(12)
@@ -350,7 +352,25 @@ struct ServicesSettingsView: View {
 
     @ViewBuilder private var providerForm: some View {
         Form {
-            if selectedProvider != .ollama {
+            if selectedProvider == .apple {
+                Section(t("系统服务", "System Service")) {
+                    LabeledContent(t("服务名称", "Service Name"), value: "Apple Translation")
+                    LabeledContent(t("数据处理", "Data Processing"), value: t("完全在设备上进行", "Entirely on device"))
+                    LabeledContent(t("费用", "Cost"), value: t("免费·无需 API Key", "Free · No API key"))
+                    LabeledContent(
+                        t("系统要求", "System Requirement"),
+                        value: AppleTranslationSupport.isAvailable
+                            ? t("当前 Mac 可用", "Available on this Mac")
+                            : t("需要 macOS 15 或更高版本", "Requires macOS 15 or later")
+                    )
+                    Text(t(
+                        "首次使用某个语言组合时，macOS 可能会请求下载翻译模型。下载后可离线翻译。",
+                        "The first use of a language pair may ask to download translation models. Translation works offline afterward."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            } else if selectedProvider != .ollama {
                 Section(t("连接", "Connection")) {
                     SecureField(t("API Key", "API Key"), text: keyBinding(for: selectedProvider))
                     if selectedProvider == .zhipu {
@@ -371,7 +391,27 @@ struct ServicesSettingsView: View {
                 }
             }
 
-            if selectedProvider != .deepl {
+            if selectedProvider == .apple {
+                Section(t("翻译模式", "Translation Mode")) {
+                    Picker(t("模式", "Mode"), selection: $settings.appleTranslationMode) {
+                        Text(t("快速翻译", "Fast Translation"))
+                            .tag(AppleTranslationMode.lowLatency)
+                        Text(t("高质量翻译", "High-Quality Translation"))
+                            .tag(AppleTranslationMode.highFidelity)
+                            .disabled(!AppleTranslationSupport.supportsTranslationStrategies)
+                    }
+                    LabeledContent(
+                        t("快速翻译", "Fast Translation"),
+                        value: t("低延迟，所有支持 Apple 翻译的 Mac", "Low latency; all Macs with Apple Translation")
+                    )
+                    LabeledContent(
+                        t("高质量翻译", "High-Quality Translation"),
+                        value: AppleTranslationSupport.supportsTranslationStrategies
+                            ? t("Apple Intelligence（当前可用）", "Apple Intelligence (available)")
+                            : t("需要 macOS 26.4 或更高版本", "Requires macOS 26.4 or later")
+                    )
+                }
+            } else if selectedProvider != .deepl {
                 Section(t("模型", "Model")) {
                     Picker(t("模型", "Model"), selection: selectedModelBinding) {
                         ForEach(modelOptions, id: \.self) { Text($0).tag($0) }
@@ -408,8 +448,12 @@ struct ServicesSettingsView: View {
                     Button(t("验证并测速", "Verify & Test Speed")) { benchmarkSelectedProvider() }
                         .disabled(isBenchmarking || isLoadingModels)
                     Text(t(
-                        "测速会实际发送一段短文本，并消耗少量额度。",
-                        "The speed test sends a short translation and uses a small amount of quota."
+                        selectedProvider == .apple
+                            ? "测速使用本机 Apple 翻译模型，不消耗 API 额度。"
+                            : "测速会实际发送一段短文本，并消耗少量额度。",
+                        selectedProvider == .apple
+                            ? "The speed test uses the on-device Apple model and consumes no API quota."
+                            : "The speed test sends a short translation and uses a small amount of quota."
                     )).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -428,7 +472,7 @@ struct ServicesSettingsView: View {
                 }
             }
 
-            if selectedProvider != .deepl {
+            if selectedProvider != .deepl && selectedProvider != .apple {
                 DisclosureGroup(t("高级", "Advanced")) {
                     TextEditor(text: $settings.customSystemPrompt).frame(minHeight: 110)
                     Text(t("翻译方向由 Poptro 自动判断；提示词只控制风格与格式。", "Poptro detects direction automatically; this prompt controls style and formatting only."))
@@ -473,6 +517,9 @@ struct ServicesSettingsView: View {
         if selectedProvider == .ollama {
             settings.configuredProviders.insert(.ollama)
         }
+        if AppleTranslationSupport.isAvailable {
+            settings.configuredProviders.insert(.apple)
+        }
         settings.save()
         if showConfirmation {
             showSaved = true
@@ -480,6 +527,7 @@ struct ServicesSettingsView: View {
         }
     }
     private func setDefaultProvider() {
+        guard selectedProvider != .apple || AppleTranslationSupport.isAvailable else { return }
         settings.provider = selectedProvider
         persist(showConfirmation: false)
         statusIsError = false
@@ -522,6 +570,7 @@ struct ServicesSettingsView: View {
 
     private func providerIcon(_ provider: TranslationProvider) -> String {
         switch provider {
+        case .apple: return "apple.logo"
         case .zhipu: return "sparkles"
         case .openai: return "brain.head.profile"
         case .deepl: return "character.book.closed"
@@ -532,6 +581,7 @@ struct ServicesSettingsView: View {
     }
     private func providerListName(_ provider: TranslationProvider) -> String {
         switch provider {
+        case .apple: return t("Apple 翻译", "Apple Translate")
         case .zhipu: return t("智谱 GLM", "Zhipu GLM")
         case .openai: return "OpenAI"
         case .deepl: return "DeepL"
@@ -542,6 +592,10 @@ struct ServicesSettingsView: View {
     }
     private func recommendedModel(for provider: TranslationProvider) -> String {
         switch provider {
+        case .apple:
+            return settings.appleTranslationMode == .lowLatency
+                ? t("快速翻译", "Fast Translation")
+                : t("高质量翻译", "High-Quality Translation")
         case .zhipu: return "GLM-4-Flash-250414"
         case .openai: return "GPT-4.1 mini"
         case .deepl: return "DeepL API Free"
@@ -551,6 +605,7 @@ struct ServicesSettingsView: View {
         }
     }
     private func providerDetailSubtitle(_ provider: TranslationProvider) -> String {
+        if provider == .apple { return t("系统原生、本地离线且无需 API Key。", "Native, on-device, offline, and no API key required.") }
         if provider == .zhipu { return t("免费模型服务", "Free model service") }
         if provider == .groq { return t("高速模型推理服务", "High-speed model inference") }
         if provider == .google { return t("Gemini 模型服务", "Gemini model service") }
@@ -564,6 +619,9 @@ struct ServicesSettingsView: View {
         if let result = benchmarks[provider], result.errorMessage != nil {
             return t("需注意", "Attention")
         }
+        if provider == .apple {
+            return AppleTranslationSupport.isAvailable ? t("可用", "Available") : t("不可用", "Unavailable")
+        }
         if provider.requiresAPIKey, keyBindingValue(provider).isEmpty {
             return t("未配置", "Not configured")
         }
@@ -572,6 +630,11 @@ struct ServicesSettingsView: View {
     private func providerStatusLongText(_ provider: TranslationProvider) -> String {
         if let result = benchmarks[provider], result.isSuccessful { return t("连接正常", "Connected") }
         if let result = benchmarks[provider], let error = result.errorMessage { return error }
+        if provider == .apple {
+            return AppleTranslationSupport.isAvailable
+                ? t("系统原生翻译可用", "Native system translation is available")
+                : t("需要 macOS 15 或更高版本", "Requires macOS 15 or later")
+        }
         if provider.requiresAPIKey, keyBindingValue(provider).isEmpty { return t("尚未配置 API Key", "API Key not configured") }
         return t("等待验证与测速", "Waiting for verification and speed test")
     }
