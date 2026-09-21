@@ -4,7 +4,7 @@ import ServiceManagement
 import SwiftUI
 
 private enum SettingsDestination: String, CaseIterable, Identifiable {
-    case general, shortcuts, services, about
+    case general, shortcuts, services, advanced, about
     var id: String { rawValue }
 
     var icon: String {
@@ -12,6 +12,7 @@ private enum SettingsDestination: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
         case .services: return "globe"
+        case .advanced: return "slider.horizontal.3"
         case .about: return "info.circle"
         }
     }
@@ -21,6 +22,7 @@ private enum SettingsDestination: String, CaseIterable, Identifiable {
         case .general: return PoptroText.value("通用", "General", language: language)
         case .shortcuts: return PoptroText.value("快捷键", "Shortcuts", language: language)
         case .services: return PoptroText.value("服务", "Services", language: language)
+        case .advanced: return PoptroText.value("高级", "Advanced", language: language)
         case .about: return PoptroText.value("关于", "About", language: language)
         }
     }
@@ -33,28 +35,66 @@ struct SettingsView: View {
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        NavigationSplitView {
-            List(SettingsDestination.allCases, selection: $destination) { item in
-                Label(item.title(language), systemImage: item.icon).tag(item)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 168, ideal: 188, max: 220)
-        } detail: {
+        VStack(spacing: 0) {
+            SettingsIconToolbar(selection: $destination, language: language)
+            Divider()
             Group {
                 switch destination ?? .general {
                 case .general: GeneralSettingsView()
                 case .shortcuts: ShortcutSettingsView()
                 case .services: ServicesSettingsView()
+                case .advanced: AdvancedSettingsView()
                 case .about: AboutView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 900, minHeight: 600)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(minWidth: 1080, minHeight: 700)
         .background(AppleTranslationBridgeContainer())
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
+    }
+}
+
+private struct SettingsIconToolbar: View {
+    @Binding var selection: SettingsDestination?
+    let language: InterfaceLanguage
+
+    var body: some View {
+        HStack(spacing: 42) {
+            ForEach(SettingsDestination.allCases) { item in
+                Button {
+                    selection = item
+                } label: {
+                    VStack(spacing: 7) {
+                        Image(systemName: item.icon)
+                            .symbolRenderingMode(.monochrome)
+                            .font(.system(size: 27, weight: .regular))
+                            .frame(width: 48, height: 34)
+                        Text(item.title(language))
+                            .font(.system(size: 13, weight: selection == item ? .semibold : .regular))
+                    }
+                    .foregroundStyle(selection == item ? Color.accentColor : Color.secondary)
+                    .frame(width: 104, height: 78)
+                    .background(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(selection == item ? Color.accentColor.opacity(0.09) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(selection == item ? Color.accentColor.opacity(0.14) : Color.clear, lineWidth: 0.7)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title(language))
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 30)
+        .frame(height: 136, alignment: .top)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.96))
     }
 }
 
@@ -76,59 +116,134 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin: Bool
     @State private var accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
     @State private var launchAtLoginError: String?
+    @State private var translationSettings = TranslationSettings.loadCurrent()
 
     init() { _launchAtLogin = State(initialValue: SMAppService.mainApp.status == .enabled) }
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsPageHeader(
-                title: t("通用", "General"),
-                subtitle: t("设置 Poptro 的界面、窗口效果与系统行为。", "Configure Poptro's interface, window effects and system behavior.")
-            )
-            Form {
-                Section(t("外观与语言", "Appearance & Language")) {
-                    Picker(t("界面语言", "Interface Language"), selection: $preferences.values.interfaceLanguage) {
+        ScrollView {
+            VStack(spacing: 0) {
+                PreferenceRow(t("开机时启动", "Launch at Login")) {
+                    HStack(spacing: 8) {
+                        Toggle("", isOn: $launchAtLogin)
+                            .labelsHidden()
+                            .toggleStyle(.checkbox)
+                            .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
+                        Text(t("开启", "On"))
+                    }
+                }
+                PreferenceRow(t("划词翻译快捷键", "Selection Translation Shortcut")) {
+                    ShortcutRecorderView(name: .translateSelection)
+                        .frame(width: 300)
+                }
+                if let launchAtLoginError {
+                    PreferenceSupportingText(launchAtLoginError, color: .red)
+                }
+
+                PreferenceDivider()
+
+                PreferenceRow(t("界面语言", "Interface Language")) {
+                    Picker("", selection: $preferences.values.interfaceLanguage) {
                         ForEach(InterfaceLanguage.allCases) { Text($0.nativeDisplayName).tag($0) }
                     }
-                    Picker(t("外观", "Appearance"), selection: $preferences.values.appearanceMode) {
+                    .labelsHidden()
+                    .frame(width: 300)
+                }
+                PreferenceRow(t("外观", "Appearance")) {
+                    Picker("", selection: $preferences.values.appearanceMode) {
                         ForEach(PanelAppearanceMode.allCases) { Text($0.localizedName(language: language)).tag($0) }
                     }
-                    Toggle(t("窗口玻璃效果", "Window Glass Effect"), isOn: $preferences.values.glassEffectEnabled)
-                    HStack {
-                        Text(t("效果强度", "Effect Intensity"))
-                        Slider(value: $preferences.values.glassTransparency, in: 0.15...0.85, step: 0.05)
-                        Text("\(Int((preferences.values.glassTransparency * 100).rounded()))%")
-                            .monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
-                    }
-                    .disabled(!preferences.values.glassEffectEnabled)
-                    Text(t(
-                        "外观设置适用于所有 Poptro 窗口，包括设置。macOS 26/27 使用系统液态玻璃，旧系统使用原生毛玻璃。",
-                        "Appearance applies to every Poptro window, including Settings. macOS 26/27 uses native Liquid Glass, with native vibrancy on older systems."
-                    )).font(.caption).foregroundStyle(.secondary)
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 300)
                 }
-                Section(t("系统", "System")) {
-                    Toggle(t("开机自动启动", "Launch at Login"), isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { updateLaunchAtLogin($0) }
-                    if let launchAtLoginError { Text(launchAtLoginError).font(.caption).foregroundStyle(.red) }
-                    LabeledContent(t("辅助功能", "Accessibility")) {
-                        Label(
-                            accessibilityGranted ? t("已授权", "Allowed") : t("未授权", "Not Allowed"),
-                            systemImage: accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                        ).foregroundStyle(accessibilityGranted ? .green : .orange)
+                PreferenceRow(t("窗口玻璃效果", "Window Glass Effect")) {
+                    HStack(spacing: 8) {
+                        Toggle("", isOn: $preferences.values.glassEffectEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.checkbox)
+                        Text(t("开启", "On"))
                     }
-                    HStack {
-                        Button(t("重新检测", "Check Again")) { accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted }
-                        if !accessibilityGranted {
-                            Button(t("前往系统设置授权", "Open System Settings")) { PermissionManager.shared.openSystemPreferencesAccessibilityPane() }
+                }
+                PreferenceSupportingText(t(
+                    "外观设置适用于所有 Poptro 窗口。",
+                    "Appearance settings apply to every Poptro window."
+                ))
+
+                PreferenceDivider()
+
+                PreferenceRow(t("所需权限", "Required Permission"), alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            PermissionBadge(
+                                title: t("辅助功能", "Accessibility"),
+                                isGranted: accessibilityGranted
+                            )
+                            Button(t("前往系统设置", "Open System Settings")) {
+                                PermissionManager.shared.openSystemPreferencesAccessibilityPane()
+                            }
                         }
+                        Text(t(
+                            "Poptro 只使用辅助功能读取选中的文字并触发快捷键，不会记录或上传你的内容。",
+                            "Poptro only uses Accessibility to read selected text and trigger shortcuts. It never records or uploads your content."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                PreferenceDivider()
+
+                PreferenceRow(t("默认翻译服务", "Default Translation Service")) {
+                    Picker("", selection: defaultProviderBinding) {
+                        ForEach(availableProviders) { provider in
+                            Text(provider.localizedDisplayName(language: language)).tag(provider)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 300)
+                }
+                PreferenceRow(t("默认目标语言", "Default Target Language")) {
+                    Picker("", selection: primaryLanguageBinding) {
+                        ForEach(SupportedLanguage.options, id: \.code) { option in
+                            Text(SupportedLanguage.localizedLabel(for: option.code, language: language)).tag(option.code)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 300)
+                }
+                PreferenceRow(t("自动检查更新", "Automatically Check for Updates")) {
+                    HStack(spacing: 8) {
+                        Toggle("", isOn: $preferences.values.automaticUpdateChecks)
+                            .labelsHidden()
+                            .toggleStyle(.checkbox)
+                        Text(t("开启", "On"))
+                    }
+                }
+
+                PreferenceDivider()
+
+                PreferenceRow(t("帮助与反馈", "Help & Feedback"), alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Link("GitHub Issues", destination: URL(string: "https://github.com/mohist-club/Poptro/issues")!)
+                        Text(t(
+                            "隐私：所有设置仅保存在这台 Mac 上。",
+                            "Privacy: all settings are stored only on this Mac."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
-            .formStyle(.grouped)
+            .frame(maxWidth: 1020)
+            .padding(.horizontal, 34)
+            .padding(.vertical, 24)
         }
-        .padding(24)
-        .onAppear { accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted }
+        .onAppear {
+            accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
+            translationSettings = TranslationSettings.loadCurrent()
+        }
     }
 
     private func updateLaunchAtLogin(_ enabled: Bool) {
@@ -140,7 +255,88 @@ struct GeneralSettingsView: View {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
+    private var availableProviders: [TranslationProvider] {
+        let providers = translationSettings.availableConfiguredProviders()
+        return providers.isEmpty ? [translationSettings.provider] : providers
+    }
+    private var defaultProviderBinding: Binding<TranslationProvider> {
+        Binding(
+            get: { translationSettings.provider },
+            set: { translationSettings.provider = $0; translationSettings.save() }
+        )
+    }
+    private var primaryLanguageBinding: Binding<String> {
+        Binding(
+            get: { translationSettings.primaryLanguageCode },
+            set: { translationSettings.primaryLanguageCode = $0; translationSettings.save() }
+        )
+    }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+private struct PreferenceRow<Content: View>: View {
+    let label: String
+    let alignment: VerticalAlignment
+    let content: Content
+
+    init(_ label: String, alignment: VerticalAlignment = .center, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.alignment = alignment
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(alignment: alignment, spacing: 30) {
+            Text(label + "：")
+                .font(.system(size: 14))
+                .frame(width: 250, alignment: .trailing)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minHeight: 52)
+    }
+}
+
+private struct PreferenceDivider: View {
+    var body: some View { Divider().padding(.vertical, 10) }
+}
+
+private struct PreferenceSupportingText: View {
+    let text: String
+    let color: Color
+
+    init(_ text: String, color: Color = .secondary) {
+        self.text = text
+        self.color = color
+    }
+
+    var body: some View {
+        HStack(spacing: 30) {
+            Color.clear.frame(width: 250, height: 1)
+            Text(text).font(.caption).foregroundStyle(color)
+            Spacer()
+        }
+        .padding(.top, -8)
+    }
+}
+
+private struct PermissionBadge: View {
+    let title: String
+    let isGranted: Bool
+
+    var body: some View {
+        Label(title, systemImage: isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isGranted ? Color.primary : Color.orange)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(isGranted ? Color.green : Color.orange, Color.primary)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.055))
+            )
+    }
 }
 
 struct ShortcutSettingsView: View {
@@ -260,7 +456,23 @@ struct ServicesSettingsView: View {
                     .font(.title2.weight(.semibold)).padding(.horizontal, 12).padding(.top, 16)
                 Text(t("选择服务进行查看；默认服务仅可设置一个。", "Select a service to inspect; only one can be the default."))
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-                List(TranslationProvider.allCases, selection: $selectedProvider) { provider in
+                Menu {
+                    ForEach(addableProviders) { provider in
+                        Button {
+                            selectedProvider = provider
+                        } label: {
+                            Label(providerListName(provider), systemImage: providerIcon(provider))
+                        }
+                    }
+                } label: {
+                    Label(t("添加服务", "Add Service"), systemImage: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .padding(.horizontal, 12)
+                .disabled(addableProviders.isEmpty)
+
+                List(displayedProviders, selection: $selectedProvider) { provider in
                     providerRow(provider).tag(provider)
                 }
                 .listStyle(.sidebar)
@@ -472,15 +684,19 @@ struct ServicesSettingsView: View {
                 }
             }
 
-            if selectedProvider != .deepl && selectedProvider != .apple {
-                DisclosureGroup(t("高级", "Advanced")) {
-                    TextEditor(text: $settings.customSystemPrompt).frame(minHeight: 110)
-                    Text(t("翻译方向由 Poptro 自动判断；提示词只控制风格与格式。", "Poptro detects direction automatically; this prompt controls style and formatting only."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
         }
         .formStyle(.grouped)
+    }
+
+    private var displayedProviders: [TranslationProvider] {
+        let configured = settings.configuredProviders
+        return TranslationProvider.allCases.filter {
+            configured.contains($0) || $0 == selectedProvider || $0 == settings.provider
+        }
+    }
+
+    private var addableProviders: [TranslationProvider] {
+        TranslationProvider.allCases.filter { !displayedProviders.contains($0) }
     }
 
     private var modelOptions: [String] {
@@ -658,6 +874,88 @@ struct ServicesSettingsView: View {
         return formatter.string(from: date)
     }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+struct AdvancedSettingsView: View {
+    @ObservedObject private var preferences = AppPreferencesStore.shared
+    @State private var settings = TranslationSettings.loadCurrent()
+    @State private var showSaved = false
+
+    private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                PreferenceRow(t("玻璃透明度", "Glass Transparency")) {
+                    HStack(spacing: 12) {
+                        Slider(value: $preferences.values.glassTransparency, in: 0.15...0.85)
+                            .frame(width: 260)
+                            .disabled(!preferences.values.glassEffectEnabled)
+                        Text("\(Int(preferences.values.glassTransparency * 100))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                }
+                PreferenceSupportingText(t(
+                    "数值越高，窗口背景越透明；文字与控件始终保持清晰。",
+                    "Higher values make the window material more transparent; text and controls remain fully opaque."
+                ))
+
+                PreferenceDivider()
+
+                PreferenceRow(t("翻译系统提示词", "Translation System Prompt"), alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextEditor(text: $settings.customSystemPrompt)
+                            .font(.system(size: 13))
+                            .frame(minHeight: 210)
+                            .padding(6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(Color(nsColor: .textBackgroundColor))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.12), lineWidth: 0.7)
+                            )
+                        Text(t(
+                            "仅影响 AI 模型的风格与格式；翻译方向仍由 Poptro 自动判断。Apple 翻译与 DeepL 不使用此提示词。",
+                            "This only affects style and formatting for AI models. Poptro still detects direction automatically. Apple Translate and DeepL do not use this prompt."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        HStack {
+                            Button(t("恢复默认", "Restore Default")) {
+                                settings.customSystemPrompt = TranslationSettings().customSystemPrompt
+                            }
+                            Spacer()
+                            if showSaved {
+                                Label(t("已保存", "Saved"), systemImage: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                            Button(t("保存", "Save")) { save() }
+                                .keyboardShortcut("s", modifiers: .command)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 1020)
+            .padding(.horizontal, 34)
+            .padding(.vertical, 24)
+        }
+        .onAppear { settings = TranslationSettings.loadCurrent() }
+    }
+
+    private func save() {
+        settings.save()
+        showSaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { showSaved = false }
+    }
+
+    private func t(_ zh: String, _ en: String) -> String {
+        PoptroText.value(zh, en, language: language)
+    }
 }
 
 struct AboutView: View {

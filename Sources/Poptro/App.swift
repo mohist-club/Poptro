@@ -8,7 +8,8 @@ struct PoptroApp: App {
         // 主窗口就是设置窗口,平时不显示,通过状态栏菜单唤出
         Settings {
             SettingsView()
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 1080, minHeight: 700)
         }
+        .defaultSize(width: 1200, height: 800)
     }
 }
