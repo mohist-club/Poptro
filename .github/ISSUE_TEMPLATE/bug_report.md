@@ -19,7 +19,7 @@ labels: bug
 
 - macOS 版本:
 - App 版本:
-- 使用的翻译服务:Apple 翻译 / 智谱 GLM / OpenAI / DeepL / Groq / Google AI / Ollama
+- 使用的翻译服务:智谱 GLM / OpenAI / DeepL / Groq / Google AI / Ollama
 
 ## 截图或报错信息
 

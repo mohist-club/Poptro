@@ -4,7 +4,7 @@ import ServiceManagement
 import SwiftUI
 
 enum SettingsDestination: String, CaseIterable, Identifiable {
-    case general, shortcuts, services, advanced, about
+    case general, shortcuts, services, appearance, about
     var id: String { rawValue }
 
     var icon: String {
@@ -12,7 +12,7 @@ enum SettingsDestination: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
         case .services: return "globe"
-        case .advanced: return "slider.horizontal.3"
+        case .appearance: return "circle.lefthalf.filled"
         case .about: return "info.circle"
         }
     }
@@ -22,7 +22,7 @@ enum SettingsDestination: String, CaseIterable, Identifiable {
         case .general: return PoptroText.value("通用", "General", language: language)
         case .shortcuts: return PoptroText.value("快捷键", "Shortcuts", language: language)
         case .services: return PoptroText.value("服务", "Services", language: language)
-        case .advanced: return PoptroText.value("高级", "Advanced", language: language)
+        case .appearance: return PoptroText.value("外观", "Appearance", language: language)
         case .about: return PoptroText.value("关于", "About", language: language)
         }
     }
@@ -47,7 +47,7 @@ struct SettingsView: View {
                 case .general: GeneralSettingsView()
                 case .shortcuts: ShortcutSettingsView()
                 case .services: ServicesSettingsView()
-                case .advanced: AdvancedSettingsView()
+                case .appearance: AppearanceSettingsView()
                 case .about: AboutView()
                 }
             }
@@ -61,7 +61,6 @@ struct SettingsView: View {
                 .ignoresSafeArea()
         }
         .frame(minWidth: 836, minHeight: 560)
-        .background(AppleTranslationBridgeContainer())
         .preferredColorScheme(preferences.values.appearanceMode == .dark ? .dark :
             preferences.values.appearanceMode == .light ? .light : nil)
     }
@@ -182,24 +181,6 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
                     .frame(width: 260)
                 }
-                PreferenceRow(t("外观", "Appearance")) {
-                    Picker("", selection: $preferences.values.appearanceMode) {
-                        ForEach(PanelAppearanceMode.allCases) { Text($0.localizedName(language: language)).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 260)
-                }
-                PreferenceRow(t("窗口玻璃效果", "Window Glass Effect")) {
-                    Toggle(t("开启", "On"), isOn: $preferences.values.glassEffectEnabled)
-                        .toggleStyle(.checkbox)
-                }
-                PreferenceSupportingText(t(
-                    "外观设置适用于所有 Poptro 窗口。",
-                    "Appearance settings apply to every Poptro window."
-                ))
-
-                PreferenceSectionGap()
-
                 PreferenceRow(t("所需权限", "Required Permission"), alignment: .top) {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 8) {
@@ -208,6 +189,9 @@ struct GeneralSettingsView: View {
                                 systemImage: accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                             )
                             .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+                            Button(t("重新检测", "Recheck")) {
+                                accessibilityGranted = PermissionManager.shared.isAccessibilityTrusted
+                            }
                             Button(t("前往系统设置…", "Open System Settings…")) {
                                 PermissionManager.shared.openSystemPreferencesAccessibilityPane()
                             }
@@ -350,15 +334,15 @@ struct ShortcutSettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
     @ObservedObject private var launcher = AppLauncher.shared
     @AppStorage("translateShortcutEnabled") private var translateShortcutEnabled = true
-    @State private var showingAppPicker = false
+    @State private var addSheet: ShortcutAddSheet?
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
         VStack(spacing: 0) {
             List {
-                Section(t("内置快捷键", "Built-in Shortcut")) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "character.cursor.ibeam").frame(width: 24)
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "character.cursor.ibeam").frame(width: 28)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(t("划词翻译", "Translate Selection"))
                             Text(t("翻译当前选中的文字", "Translate the currently selected text"))
@@ -372,32 +356,25 @@ struct ShortcutSettingsView: View {
                             .onChange(of: translateShortcutEnabled) { HotkeyManager.shared.setTranslationEnabled($0) }
                         Label(t("内置", "Built-in"), systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                     }
+                    .frame(minHeight: 38)
+                } header: {
+                    Text(t("内置快捷键", "Built-in Shortcut"))
                 }
-                Section(t("应用快捷键", "App Shortcuts")) {
-                    ForEach(launcher.bindings) { binding in
-                        HStack(spacing: 12) {
-                            Image(nsImage: launcher.icon(forAppPath: binding.appBundlePath)).resizable().frame(width: 28, height: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(binding.appName)
-                                Text(t("打开应用", "Open App")).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 150)
-                            Toggle("", isOn: Binding(
-                                get: { launcher.bindings.first(where: { $0.id == binding.id })?.isEnabled ?? false },
-                                set: { launcher.setEnabled($0, for: binding) }
-                            )).labelsHidden().toggleStyle(.checkbox)
-                            Button(role: .destructive) { launcher.removeBinding(binding) } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless).help(t("删除快捷键", "Remove Shortcut"))
-                        }
-                    }
-                }
+                bindingSection(.application, title: t("应用", "Applications"))
+                bindingSection(.shortcut, title: t("快捷指令", "Shortcuts"))
+                bindingSection(.system, title: t("系统操作", "System Actions"))
+                bindingSection(.script, title: t("脚本", "Scripts"))
             }
             .listStyle(.inset)
             Divider()
             HStack {
-                Button { showingAppPicker = true } label: {
-                    Label(t("添加应用快捷键", "Add App Shortcut"), systemImage: "plus")
+                Menu {
+                    Button { addSheet = .application } label: { Label(t("应用", "Application"), systemImage: "app") }
+                    Button { addSheet = .shortcut } label: { Label(t("快捷指令", "Shortcut"), systemImage: "square.stack.3d.up") }
+                    Button { addSheet = .system } label: { Label(t("系统操作", "System Action"), systemImage: "gearshape.2") }
+                    Button { addSheet = .script } label: { Label(t("脚本", "Script"), systemImage: "terminal") }
+                } label: {
+                    Label(t("添加快捷键", "Add Shortcut"), systemImage: "plus")
                 }
                 Spacer()
                 Text(t("所有快捷键均可随时修改。", "All shortcuts can be changed at any time."))
@@ -407,9 +384,83 @@ struct ShortcutSettingsView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
         }
-        .sheet(isPresented: $showingAppPicker) { AppPickerView(isPresented: $showingAppPicker) }
+        .sheet(item: $addSheet) { sheet in
+            switch sheet {
+            case .application: AppPickerView(isPresented: sheetBinding)
+            case .shortcut: ShortcutPickerView(isPresented: sheetBinding)
+            case .system: SystemActionPickerView(isPresented: sheetBinding)
+            case .script: ScriptEditorView(isPresented: sheetBinding)
+            }
+        }
+    }
+
+    @ViewBuilder private func bindingSection(_ kind: ShortcutActionKind, title: String) -> some View {
+        let items = launcher.bindings(of: kind)
+        if !items.isEmpty {
+            Section {
+                ForEach(items) { binding in bindingRow(binding) }
+            } header: {
+                Text(title)
+            }
+        }
+    }
+
+    private func bindingRow(_ binding: LaunchBinding) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if binding.actionKind == .application {
+                    Image(nsImage: launcher.icon(forAppPath: binding.appBundlePath)).resizable()
+                } else {
+                    Image(systemName: actionIcon(binding)).resizable().scaledToFit().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(binding.appName)
+                Text(actionSubtitle(binding)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            ShortcutRecorderView(name: KeyboardShortcuts.Name(binding.hotkeyName)).frame(width: 150)
+            Toggle("", isOn: Binding(
+                get: { launcher.bindings.first(where: { $0.id == binding.id })?.isEnabled ?? false },
+                set: { launcher.setEnabled($0, for: binding) }
+            )).labelsHidden().toggleStyle(.checkbox)
+            Button(role: .destructive) { launcher.removeBinding(binding) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless).help(t("删除快捷键", "Remove Shortcut"))
+        }
+        .frame(minHeight: 34)
+    }
+
+    private var sheetBinding: Binding<Bool> {
+        Binding(get: { addSheet != nil }, set: { if !$0 { addSheet = nil } })
+    }
+    private func actionIcon(_ binding: LaunchBinding) -> String {
+        switch binding.actionKind {
+        case .application: return "app"
+        case .shortcut: return "square.stack.3d.up"
+        case .system: return "gearshape.2"
+        case .script: return "terminal"
+        }
+    }
+    private func actionSubtitle(_ binding: LaunchBinding) -> String {
+        switch binding.actionKind {
+        case .application: return t("打开应用", "Open Application")
+        case .shortcut: return t("运行快捷指令", "Run Shortcut")
+        case .system: return t("执行系统操作", "Run System Action")
+        case .script:
+            switch binding.scriptKind ?? .shell {
+            case .shell: return "Shell"
+            case .appleScript: return "AppleScript"
+            case .javaScript: return "JavaScript for Automation"
+            }
+        }
     }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+private enum ShortcutAddSheet: String, Identifiable {
+    case application, shortcut, system, script
+    var id: String { rawValue }
 }
 
 struct AppPickerView: View {
@@ -442,6 +493,164 @@ struct AppPickerView: View {
         .onAppear { apps = AppLauncher.shared.scanInstalledApplications() }
     }
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+struct ShortcutPickerView: View {
+    @ObservedObject private var preferences = AppPreferencesStore.shared
+    @Binding var isPresented: Bool
+    @State private var shortcuts: [String] = []
+    @State private var errorMessage: String?
+    @State private var isLoading = true
+    private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetHeader(title: t("选择快捷指令", "Choose Shortcut"), subtitle: t("从“快捷指令”应用读取。", "Loaded from the Shortcuts app."))
+            Divider()
+            Group {
+                if isLoading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+                else if let errorMessage {
+                    VStack(spacing: 10) {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                        Button(t("重新读取", "Retry")) { load() }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(shortcuts, id: \.self) { name in
+                        Label(name, systemImage: "square.stack.3d.up")
+                            .contentShape(Rectangle())
+                            .onTapGesture { AppLauncher.shared.addShortcut(named: name); isPresented = false }
+                    }.listStyle(.inset)
+                }
+            }
+            Divider()
+            SheetFooter(isPresented: $isPresented)
+        }
+        .frame(width: 440, height: 420)
+        .onAppear { load() }
+    }
+    private func load() {
+        isLoading = true; errorMessage = nil
+        AppLauncher.shared.listShortcuts { result in
+            isLoading = false
+            switch result { case .success(let values): shortcuts = values; case .failure(let error): errorMessage = error.localizedDescription }
+        }
+    }
+    private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+struct SystemActionPickerView: View {
+    @ObservedObject private var preferences = AppPreferencesStore.shared
+    @Binding var isPresented: Bool
+    private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetHeader(title: t("选择系统操作", "Choose System Action"), subtitle: t("危险操作会在执行前再次确认。", "Destructive actions always ask for confirmation."))
+            Divider()
+            List(SystemShortcutAction.allCases) { action in
+                Label(actionName(action), systemImage: actionIcon(action))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        AppLauncher.shared.addSystemAction(action, displayName: actionName(action))
+                        isPresented = false
+                    }
+            }.listStyle(.inset)
+            Divider()
+            SheetFooter(isPresented: $isPresented)
+        }
+        .frame(width: 440, height: 390)
+    }
+    private func actionName(_ action: SystemShortcutAction) -> String {
+        switch action {
+        case .lockScreen: return t("锁定屏幕", "Lock Screen")
+        case .sleep: return t("进入睡眠", "Sleep")
+        case .emptyTrash: return t("清空废纸篓", "Empty Trash")
+        case .logOut: return t("退出登录", "Log Out")
+        case .restart: return t("重新启动", "Restart")
+        case .shutDown: return t("关机", "Shut Down")
+        }
+    }
+    private func actionIcon(_ action: SystemShortcutAction) -> String {
+        switch action {
+        case .lockScreen: return "lock"
+        case .sleep: return "moon.zzz"
+        case .emptyTrash: return "trash"
+        case .logOut: return "rectangle.portrait.and.arrow.right"
+        case .restart: return "arrow.clockwise"
+        case .shutDown: return "power"
+        }
+    }
+    private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+struct ScriptEditorView: View {
+    @ObservedObject private var preferences = AppPreferencesStore.shared
+    @Binding var isPresented: Bool
+    @State private var name = ""
+    @State private var kind: ShortcutScriptKind = .shell
+    @State private var source = ""
+    private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetHeader(title: t("添加脚本", "Add Script"), subtitle: t("脚本仅保存在这台 Mac，并以当前用户身份运行。", "The script stays on this Mac and runs as the current user."))
+            Divider()
+            Form {
+                TextField(t("名称", "Name"), text: $name)
+                Picker(t("脚本类型", "Script Type"), selection: $kind) {
+                    Text("Shell").tag(ShortcutScriptKind.shell)
+                    Text("AppleScript").tag(ShortcutScriptKind.appleScript)
+                    Text("JavaScript for Automation").tag(ShortcutScriptKind.javaScript)
+                }
+                LabeledContent(t("脚本", "Script")) {
+                    TextEditor(text: $source)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 330, height: 190)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(nsColor: .separatorColor), lineWidth: 0.6))
+                }
+            }
+            .formStyle(.columns)
+            .padding(18)
+            Divider()
+            HStack {
+                Spacer()
+                Button(t("取消", "Cancel")) { isPresented = false }
+                Button(t("添加", "Add")) {
+                    AppLauncher.shared.addScript(name: name.trimmingCharacters(in: .whitespacesAndNewlines), source: source, kind: kind)
+                    isPresented = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.padding(12)
+        }
+        .frame(width: 560, height: 420)
+    }
+    private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
+}
+
+private struct SheetHeader: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.headline)
+            Text(subtitle).font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+    }
+}
+
+private struct SheetFooter: View {
+    @ObservedObject private var preferences = AppPreferencesStore.shared
+    @Binding var isPresented: Bool
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(PoptroText.value(
+                "取消", "Cancel", language: preferences.values.interfaceLanguage
+            )) { isPresented = false }
+        }
+        .padding(12)
+    }
 }
 
 struct ServicesSettingsView: View {
@@ -570,7 +779,6 @@ struct ServicesSettingsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 Button(t("设为默认", "Set as Default")) { setDefaultProvider() }
-                    .disabled(selectedProvider == .apple && !AppleTranslationSupport.isAvailable)
             }
         }
     }
@@ -578,9 +786,6 @@ struct ServicesSettingsView: View {
     private func statusIcon(for provider: TranslationProvider) -> String {
         if let result = benchmarks[provider] {
             return result.isSuccessful ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-        }
-        if provider == .apple, AppleTranslationSupport.isAvailable {
-            return "checkmark.circle.fill"
         }
         if provider.requiresAPIKey, keyBindingValue(provider).isEmpty {
             return "exclamationmark.triangle.fill"
@@ -590,25 +795,7 @@ struct ServicesSettingsView: View {
 
     @ViewBuilder private var providerForm: some View {
         Form {
-            if selectedProvider == .apple {
-                Section(t("系统服务", "System Service")) {
-                    LabeledContent(t("服务名称", "Service Name"), value: "Apple Translation")
-                    LabeledContent(t("数据处理", "Data Processing"), value: t("完全在设备上进行", "Entirely on device"))
-                    LabeledContent(t("费用", "Cost"), value: t("免费·无需 API Key", "Free · No API key"))
-                    LabeledContent(
-                        t("系统要求", "System Requirement"),
-                        value: AppleTranslationSupport.isAvailable
-                            ? t("当前 Mac 可用", "Available on this Mac")
-                            : t("需要 macOS 15 或更高版本", "Requires macOS 15 or later")
-                    )
-                    Text(t(
-                        "首次使用语言组合时，macOS 可能会下载离线模型。",
-                        "macOS may download an offline model the first time a language pair is used."
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            } else if selectedProvider != .ollama {
+            if selectedProvider != .ollama {
                 Section(t("连接", "Connection")) {
                     LabeledContent("API Key") {
                         SecureField("", text: keyBinding(for: selectedProvider))
@@ -635,27 +822,7 @@ struct ServicesSettingsView: View {
                 }
             }
 
-            if selectedProvider == .apple {
-                Section(t("翻译模式", "Translation Mode")) {
-                    Picker(t("模式", "Mode"), selection: $settings.appleTranslationMode) {
-                        Text(t("快速翻译", "Fast Translation"))
-                            .tag(AppleTranslationMode.lowLatency)
-                        Text(t("高质量翻译", "High-Quality Translation"))
-                            .tag(AppleTranslationMode.highFidelity)
-                            .disabled(!AppleTranslationSupport.supportsTranslationStrategies)
-                    }
-                    LabeledContent(
-                        t("快速翻译", "Fast Translation"),
-                        value: t("低延迟 · 本机离线", "Low latency · On device")
-                    )
-                    LabeledContent(
-                        t("高质量翻译", "High-Quality Translation"),
-                        value: AppleTranslationSupport.supportsTranslationStrategies
-                            ? "Apple Intelligence"
-                            : t("需要 macOS 26.4+", "Requires macOS 26.4+")
-                    )
-                }
-            } else if selectedProvider != .deepl {
+            if selectedProvider != .deepl {
                 Section(t("模型", "Model")) {
                     Picker(t("模型", "Model"), selection: selectedModelBinding) {
                         ForEach(modelOptions, id: \.self) { Text($0).tag($0) }
@@ -692,12 +859,8 @@ struct ServicesSettingsView: View {
                     Button(t("验证并测速", "Verify & Test Speed")) { benchmarkSelectedProvider() }
                         .disabled(isBenchmarking || isLoadingModels)
                     Text(t(
-                        selectedProvider == .apple
-                            ? "使用本机模型测速，不消耗 API 额度。"
-                            : "测速会实际发送一段短文本，并消耗少量额度。",
-                        selectedProvider == .apple
-                            ? "Uses the on-device model and no API quota."
-                            : "The speed test sends a short translation and uses a small amount of quota."
+                        "测速会实际发送一段短文本，并消耗少量额度。",
+                        "The speed test sends a short translation and uses a small amount of quota."
                     ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -715,6 +878,28 @@ struct ServicesSettingsView: View {
                 Picker(t("备用语言", "Secondary Language"), selection: $settings.secondaryLanguageCode) {
                     ForEach(SupportedLanguage.options, id: \.code) { option in
                         Text(SupportedLanguage.localizedLabel(for: option.code, language: language)).tag(option.code)
+                    }
+                }
+            }
+
+            if selectedProvider != .deepl {
+                Section(t("高级", "Advanced")) {
+                    DisclosureGroup(t("翻译系统提示词", "Translation System Prompt")) {
+                        TextEditor(text: $settings.customSystemPrompt)
+                            .font(.system(size: 12, design: .monospaced))
+                            .frame(minHeight: 130)
+                        HStack {
+                            Text(t(
+                                "只影响 AI 模型的翻译风格与格式。",
+                                "Only affects translation style and formatting for AI models."
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(t("恢复默认", "Restore Default")) {
+                                settings.customSystemPrompt = TranslationSettings().customSystemPrompt
+                            }
+                        }
                     }
                 }
             }
@@ -770,9 +955,6 @@ struct ServicesSettingsView: View {
         if selectedProvider == .ollama {
             settings.configuredProviders.insert(.ollama)
         }
-        if AppleTranslationSupport.isAvailable {
-            settings.configuredProviders.insert(.apple)
-        }
         settings.save()
         if showConfirmation {
             showSaved = true
@@ -780,7 +962,6 @@ struct ServicesSettingsView: View {
         }
     }
     private func setDefaultProvider() {
-        guard selectedProvider != .apple || AppleTranslationSupport.isAvailable else { return }
         settings.provider = selectedProvider
         persist(showConfirmation: false)
         statusIsError = false
@@ -823,7 +1004,6 @@ struct ServicesSettingsView: View {
 
     private func providerIcon(_ provider: TranslationProvider) -> String {
         switch provider {
-        case .apple: return "apple.logo"
         case .zhipu: return "sparkles"
         case .openai: return "brain.head.profile"
         case .deepl: return "character.book.closed"
@@ -834,7 +1014,6 @@ struct ServicesSettingsView: View {
     }
     private func providerListName(_ provider: TranslationProvider) -> String {
         switch provider {
-        case .apple: return t("Apple 翻译", "Apple Translate")
         case .zhipu: return t("智谱 GLM", "Zhipu GLM")
         case .openai: return "OpenAI"
         case .deepl: return "DeepL"
@@ -845,10 +1024,6 @@ struct ServicesSettingsView: View {
     }
     private func recommendedModel(for provider: TranslationProvider) -> String {
         switch provider {
-        case .apple:
-            return settings.appleTranslationMode == .lowLatency
-                ? t("快速翻译", "Fast Translation")
-                : t("高质量翻译", "High-Quality Translation")
         case .zhipu: return "GLM-4-Flash-250414"
         case .openai: return "GPT-4.1 mini"
         case .deepl: return "DeepL API Free"
@@ -858,7 +1033,6 @@ struct ServicesSettingsView: View {
         }
     }
     private func providerDetailSubtitle(_ provider: TranslationProvider) -> String {
-        if provider == .apple { return t("系统原生、本地离线且无需 API Key。", "Native, on-device, offline, and no API key required.") }
         if provider == .zhipu { return t("免费模型服务", "Free model service") }
         if provider == .groq { return t("高速模型推理服务", "High-speed model inference") }
         if provider == .google { return t("Gemini 模型服务", "Gemini model service") }
@@ -872,9 +1046,6 @@ struct ServicesSettingsView: View {
         if let result = benchmarks[provider], result.errorMessage != nil {
             return t("需注意", "Attention")
         }
-        if provider == .apple {
-            return AppleTranslationSupport.isAvailable ? t("可用", "Available") : t("不可用", "Unavailable")
-        }
         if provider.requiresAPIKey, keyBindingValue(provider).isEmpty {
             return t("未配置", "Not configured")
         }
@@ -883,11 +1054,6 @@ struct ServicesSettingsView: View {
     private func providerStatusLongText(_ provider: TranslationProvider) -> String {
         if let result = benchmarks[provider], result.isSuccessful { return t("连接正常", "Connected") }
         if let result = benchmarks[provider], let error = result.errorMessage { return error }
-        if provider == .apple {
-            return AppleTranslationSupport.isAvailable
-                ? t("系统原生翻译可用", "Native system translation is available")
-                : t("需要 macOS 15 或更高版本", "Requires macOS 15 or later")
-        }
         if provider.requiresAPIKey, keyBindingValue(provider).isEmpty { return t("尚未配置 API Key", "API Key not configured") }
         return t("等待验证与测速", "Waiting for verification and speed test")
     }
@@ -913,16 +1079,26 @@ struct ServicesSettingsView: View {
     private func t(_ zh: String, _ en: String) -> String { PoptroText.value(zh, en, language: language) }
 }
 
-struct AdvancedSettingsView: View {
+struct AppearanceSettingsView: View {
     @ObservedObject private var preferences = AppPreferencesStore.shared
-    @State private var settings = TranslationSettings.loadCurrent()
-    @State private var showSaved = false
-
     private var language: InterfaceLanguage { preferences.values.interfaceLanguage }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 6) {
+                PreferenceRow(t("外观", "Appearance")) {
+                    Picker("", selection: $preferences.values.appearanceMode) {
+                        ForEach(PanelAppearanceMode.allCases) {
+                            Text($0.localizedName(language: language)).tag($0)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 260)
+                }
+                PreferenceRow(t("窗口玻璃效果", "Window Glass Effect")) {
+                    Toggle(t("开启", "On"), isOn: $preferences.values.glassEffectEnabled)
+                        .toggleStyle(.checkbox)
+                }
                 PreferenceRow(t("玻璃透明度", "Glass Transparency")) {
                     HStack(spacing: 12) {
                         Slider(value: $preferences.values.glassTransparency, in: 0.15...0.85)
@@ -935,61 +1111,15 @@ struct AdvancedSettingsView: View {
                     }
                 }
                 PreferenceSupportingText(t(
-                    "数值越高，窗口背景越透明；文字与控件始终保持清晰。",
-                    "Higher values make the window material more transparent; text and controls remain fully opaque."
+                    "适用于设置与翻译窗口。系统支持时自动使用原生玻璃材质；文字与控件始终保持清晰。",
+                    "Applies to Settings and translation windows. Native glass material is used when supported; text and controls remain opaque."
                 ))
-
-                PreferenceSectionGap()
-
-                PreferenceRow(t("翻译系统提示词", "Translation System Prompt"), alignment: .top) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextEditor(text: $settings.customSystemPrompt)
-                            .font(.system(size: 13))
-                            .frame(width: 360)
-                            .frame(minHeight: 180)
-                            .padding(5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(Color(nsColor: .textBackgroundColor))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.6)
-                            )
-                        Text(t(
-                            "仅影响 AI 模型的风格与格式；翻译方向仍由 Poptro 自动判断。Apple 翻译与 DeepL 不使用此提示词。",
-                            "This only affects style and formatting for AI models. Poptro still detects direction automatically. Apple Translate and DeepL do not use this prompt."
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        HStack {
-                            Button(t("恢复默认", "Restore Default")) {
-                                settings.customSystemPrompt = TranslationSettings().customSystemPrompt
-                            }
-                            Spacer()
-                            if showSaved {
-                                Label(t("已保存", "Saved"), systemImage: "checkmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                            }
-                            Button(t("保存", "Save")) { save() }
-                                .keyboardShortcut("s", modifiers: .command)
-                        }
-                    }
-                }
             }
             .controlSize(.regular)
             .frame(maxWidth: 700)
             .padding(.horizontal, 26)
             .padding(.vertical, 20)
         }
-        .onAppear { settings = TranslationSettings.loadCurrent() }
-    }
-
-    private func save() {
-        settings.save()
-        showSaved = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { showSaved = false }
     }
 
     private func t(_ zh: String, _ en: String) -> String {

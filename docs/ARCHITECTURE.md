@@ -18,20 +18,19 @@ App / AppDelegate
 ├── InstallationManager      固定 /Applications 运行身份
 ├── PermissionManager        辅助功能权限静默检查与显式引导
 ├── HotkeyManager            内置翻译快捷键
-└── AppLauncher              动态应用快捷键
+└── AppLauncher              应用、快捷指令、系统操作与脚本快捷键
 
 TranslationFlowCoordinator   翻译流程唯一编排入口
 ├── TextCaptureService       AX 取词 → 模拟复制兜底
 ├── LanguageDetector         识别源语言并选择目标语言
 ├── TranslationService       OpenAI 兼容流式接口
-├── AppleTranslationService  Apple 本地翻译与 SwiftUI session 桥接
 ├── DeepLService             DeepL 接口
 ├── GoogleAIService          Gemini 接口
 ├── OllamaService            本地模型接口
 └── FloatingTranslationPanel NSPanel + SwiftUI 双栏界面
 
 Settings / Persistence
-├── SettingsView             通用、快捷键、服务、关于
+├── SettingsView             通用、快捷键、服务、外观、关于
 ├── AppPreferencesStore      外观、语言、自动检查更新
 ├── TranslationSettings      服务、模型、语言、Prompt
 ├── LocalStore               Application Support JSON

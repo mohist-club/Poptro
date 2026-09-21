@@ -21,8 +21,6 @@ permissions:
 
 jobs:
   release:
-    # Apple Translation 的 highFidelity / lowLatency strategy API 从
-    # Xcode 26.4 SDK 开始可用；macos-15 默认 Xcode 16.4 无法编译。
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -46,12 +44,11 @@ jobs:
           body: |
             ## Poptro ${{ github.ref_name }}
 
-            - 顶部导航按 Safari 偏好设置工具栏重做：大图标、下方标签和选中圆角底板
-            - 翻译服务使用原生侧边列表、分栏视图、Form、Picker 与系统按钮
-            - 通用、高级和关于页统一为 Safari 风格的标签对齐与内容宽度
-            - 窗口背景改用系统原生材质；macOS 26/27 自动采用对应的液态玻璃表现
-            - 修复翻译服务长说明在最小窗口尺寸下可能溢出的问题
-            - 新增设置窗口渲染回归测试，固定最小尺寸为 836 × 560
+            - 快捷键扩展为应用、快捷指令、系统操作与 Shell / AppleScript / JXA 脚本
+            - 关机、重启、退出登录和清空废纸篓等危险操作执行前必须再次确认
+            - “高级”重命名为“外观”，集中管理浅色、深色、系统外观和玻璃效果
+            - 通用页新增辅助功能权限“重新检测”按钮，所有设置行统一 Safari 式对齐
+            - 移除 Apple 翻译，并安全迁移旧版本服务与测速配置
 
             ⚠️ 这个版本是 ad-hoc 自签名,不是 Apple 官方认证开发者签名。
             首次打开会被系统拦截提示"无法验证开发者"或"已损坏",这是正常现象,不是文件真的坏了。

@@ -18,7 +18,6 @@ final class TranslationSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.zhipuModel, "glm-4-flash-250414")
         XCTAssertEqual(decoded.groqModel, "qwen/qwen3.8-27b")
         XCTAssertEqual(decoded.googleModel, "gemini-3.5-flash-lite")
-        XCTAssertEqual(decoded.appleTranslationMode, .lowLatency)
         XCTAssertEqual(decoded.primaryLanguageCode, "ZH")
         XCTAssertEqual(decoded.secondaryLanguageCode, "EN-US")
         XCTAssertEqual(decoded.panelAppearanceMode, .light)
@@ -53,7 +52,6 @@ final class TranslationSettingsTests: XCTestCase {
         settings.panelAppearanceMode = .system
         settings.groqModel = "llama-3.3-70b-versatile"
         settings.googleModel = "gemini-2.5-flash-lite"
-        settings.appleTranslationMode = .highFidelity
 
         let data = try JSONEncoder().encode(settings)
         let decoded = try JSONDecoder().decode(TranslationSettings.self, from: data)
@@ -63,21 +61,15 @@ final class TranslationSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.panelAppearanceMode, .system)
         XCTAssertEqual(decoded.groqModel, "llama-3.3-70b-versatile")
         XCTAssertEqual(decoded.googleModel, "gemini-2.5-flash-lite")
-        XCTAssertEqual(decoded.appleTranslationMode, .highFidelity)
     }
 
     func testProviderModelRoutingAndDiscoveryCapabilities() {
         var settings = TranslationSettings()
         settings.setModel("groq-test", for: .groq)
         settings.setModel("google-test", for: .google)
-        settings.setModel("Apple High Fidelity", for: .apple)
 
         XCTAssertEqual(settings.model(for: .groq), "groq-test")
         XCTAssertEqual(settings.model(for: .google), "google-test")
-        XCTAssertEqual(settings.model(for: .apple), "Apple High Fidelity")
-        XCTAssertEqual(settings.appleTranslationMode, .highFidelity)
-        XCTAssertFalse(TranslationProvider.apple.requiresAPIKey)
-        XCTAssertFalse(TranslationProvider.apple.supportsRemoteModelDiscovery)
         XCTAssertTrue(TranslationProvider.groq.supportsRemoteModelDiscovery)
         XCTAssertTrue(TranslationProvider.google.supportsRemoteModelDiscovery)
         XCTAssertFalse(TranslationProvider.deepl.supportsRemoteModelDiscovery)
@@ -103,14 +95,21 @@ final class TranslationSettingsTests: XCTestCase {
         XCTAssertTrue(settings.availableConfiguredProviders().isEmpty)
     }
 
-    func testConfiguredAppleProviderTracksSystemAvailability() {
-        var settings = TranslationSettings()
-        settings.configuredProviders = [.apple]
+    func testLegacyAppleProviderMigratesWithoutResettingOtherSettings() throws {
+        let legacy = """
+        {
+            "provider": "apple",
+            "configuredProviders": ["apple", "deepl"],
+            "secondaryLanguageCode": "JA",
+            "customSystemPrompt": "keep me"
+        }
+        """.data(using: .utf8)!
 
-        XCTAssertEqual(
-            settings.availableConfiguredProviders().contains(.apple),
-            AppleTranslationSupport.isAvailable
-        )
+        let decoded = try JSONDecoder().decode(TranslationSettings.self, from: legacy)
+        XCTAssertEqual(decoded.provider, .zhipu)
+        XCTAssertEqual(decoded.configuredProviders, [.zhipu, .deepl])
+        XCTAssertEqual(decoded.secondaryLanguageCode, "JA")
+        XCTAssertEqual(decoded.customSystemPrompt, "keep me")
     }
 
     func testBenchmarkResultRoundTrip() throws {

@@ -87,8 +87,6 @@ final class TranslationService: NSObject {
 
     private func endpoint(for provider: TranslationProvider) -> URL? {
         switch provider {
-        case .apple:
-            return nil
         case .zhipu:
             return URL(string: "https://open.bigmodel.cn/api/paas/v4/chat/completions")
         case .openai:

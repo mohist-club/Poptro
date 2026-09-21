@@ -182,7 +182,6 @@ struct TranslationPanelView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .opacity(0)
         )
-        .background(AppleTranslationBridgeContainer())
     }
 
     private var titleBar: some View {
@@ -447,7 +446,6 @@ struct TranslationPanelView: View {
 
     private func providerIcon(_ provider: TranslationProvider) -> String {
         switch provider {
-        case .apple: return "apple.logo"
         case .zhipu: return "sparkles"
         case .openai: return "brain.head.profile"
         case .deepl: return "character.book.closed"

@@ -13,7 +13,6 @@ enum KeychainHelper {
     // remain readable after the public app name changes to Poptro 1.0.
     private static func localKey(for provider: TranslationProvider) -> String {
         switch provider {
-        case .apple: return "com.poptro.local.apple-translation-no-key"
         case .zhipu: return "com.menubartranslator.local.zhipu-api-key"
         case .openai: return "com.menubartranslator.local.openai-api-key"
         case .deepl: return "com.menubartranslator.local.deepl-api-key"

@@ -19,6 +19,20 @@ final class SettingsViewTests: XCTestCase {
         )
     }
 
+    func testShortcutSettingsRendersAtSafariScale() throws {
+        try renderSettings(
+            destination: .shortcuts,
+            captureEnvironmentKey: "POPTRO_SHORTCUTS_CAPTURE"
+        )
+    }
+
+    func testAppearanceSettingsRendersAtSafariScale() throws {
+        try renderSettings(
+            destination: .appearance,
+            captureEnvironmentKey: "POPTRO_APPEARANCE_CAPTURE"
+        )
+    }
+
     private func renderSettings(
         destination: SettingsDestination,
         captureEnvironmentKey: String

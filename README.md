@@ -1,18 +1,18 @@
 # Poptro
 
-一个 macOS 菜单栏工具:一个全局快捷键搞定「划词翻译」和「快速启动应用」。
+一个 macOS 菜单栏工具：用全局快捷键完成划词翻译、应用启动与自动化操作。
 
 <!-- TODO: 这里放一张实际截图或 GIF,发布前替换 -->
 
 ## 功能
 
-- **划词翻译**:选中任意文字,按一下快捷键就弹出翻译结果,支持 Apple 翻译 / 智谱 GLM / OpenAI / DeepL / Groq / Google AI / 本地 Ollama,可以随时切换
+- **划词翻译**:选中任意文字,按一下快捷键就弹出翻译结果,支持智谱 GLM / OpenAI / DeepL / Groq / Google AI / 本地 Ollama,可以随时切换
 - **读取可用模型**:OpenAI、Groq、Google AI、智谱与 Ollama 均可从服务商接口读取当前账号可用模型，不依赖写死的下拉列表
 - **快速切换服务**:翻译窗口左下角只列出已经配置的服务，切换后立即使用新服务重新翻译
 - **键盘优先**:`Command + Return` 复制译文，`Command + Delete` 重置当前原文与译文
 - **没划词也能翻**:同一个快捷键,没有选中内容时会弹出一个空白输入框,直接打字或粘贴翻译,回车出结果
 - **智能判断翻译方向**:自动识别原文是什么语言(覆盖 50+ 种语言),决定翻成你配置的「主语言」还是「备语言」,弹窗里也能随时手动改成其它语言
-- **应用快捷启动**:给任意已安装的应用绑定一个全局快捷键,类似 Raycast 的 Quicklinks
+- **全局快捷键**:可绑定应用、macOS 快捷指令、系统操作以及 Shell / AppleScript / JXA 脚本
 - **窗口可拖动、可调整大小、会记住你上次的位置和尺寸**
 - **支持锁定窗口**,失去焦点也不会自动关闭
 - **浅色 / 深色 / 跟随系统** 三种外观
@@ -34,28 +34,25 @@
 
 1. 打开后会提示需要「辅助功能」权限(划词、全局快捷键都依赖这个),按提示去系统设置里勾选
 2. 点菜单栏图标 → 设置,选一个翻译服务商并填好对应配置:
-   - **Apple 翻译**:macOS 15 起可用，完全在设备上处理，无需 API Key；macOS 26.4 起可在快速和 Apple Intelligence 高质量模式之间切换
    - **智谱 GLM（默认）**:默认使用免费的 `GLM-4-Flash-250414`，仍需申请自己的 API Key
    - **OpenAI**:需要去 [platform.openai.com](https://platform.openai.com) 申请 API Key(和 ChatGPT Plus 订阅是两套完全独立的计费系统,互不相通)
    - **DeepL**:需要去 [deepl.com/pro-api](https://www.deepl.com/pro-api) 申请 API Key,免费版每月有额度
    - **Groq**:填写 Groq API Key 后可读取账号当前支持的模型
    - **Google AI**:填写 Google AI Studio API Key 后可读取支持 `generateContent` 的 Gemini 模型
    - **Ollama**:需要自己先装好 [Ollama](https://ollama.com) 并在本地跑一个模型,完全免费、不联网、不需要 API Key
-3. 在「应用快捷启动」里按需绑定几个常用应用
+3. 在「快捷键」里按需绑定应用、快捷指令、系统操作或脚本
 
 ## 隐私说明
 
 本应用不会收集或上传你的任何数据。但请注意:
 
 - 使用在线服务时,你划词/输入的文本会**发送给你当前选择的服务商**做翻译,具体隐私政策以对应服务商官网为准
-- 使用 Apple 翻译或 Ollama 时,翻译内容完全在你本机进行；Apple 翻译首次使用某个语言组合时可能需要下载系统模型
+- 使用 Ollama 时,翻译内容完全在你本机进行
 - API Key 仅保存在本机，并使用与当前 Mac 绑定的 AES-GCM 密钥加密，不会以明文形式落盘或上传
 
 ## 从源码编译
 
-需要 macOS 13+ 和 Xcode 26.4+。Xcode 26.4 SDK 用于编译 Apple 翻译的
-「快速翻译 / 高质量翻译」双模式；生成的 App 仍然支持 macOS 13+，
-Apple 翻译功能会按实际系统版本显示。
+需要 macOS 13+ 和当前版本的 Xcode。生成的 App 支持 macOS 13+。
 
 ```bash
 git clone https://github.com/mohist-club/Poptro.git

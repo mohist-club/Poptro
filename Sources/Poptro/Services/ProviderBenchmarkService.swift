@@ -17,7 +17,9 @@ enum ProviderBenchmarkStore {
 
     static func load() -> [TranslationProvider: ProviderBenchmarkResult] {
         let values = LocalStore.load([ProviderBenchmarkResult].self, filename: filename, default: [])
-        return Dictionary(uniqueKeysWithValues: values.map { ($0.provider, $0) })
+        // Apple 服务退场后，旧 Apple 记录会迁移为 zhipu；用覆盖式归并避免
+        // 与已有 zhipu 记录形成重复键并导致 Dictionary 初始化崩溃。
+        return values.reduce(into: [:]) { $0[$1.provider] = $1 }
     }
 
     static func save(_ result: ProviderBenchmarkResult) {
@@ -91,22 +93,6 @@ enum ProviderBenchmarkService {
         }
 
         switch provider {
-        case .apple:
-            guard #available(macOS 15.0, *) else {
-                onComplete(NSError(
-                    domain: "Poptro.AppleTranslation",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Apple 翻译需要 macOS 15 或更高版本。"]
-                ))
-                return
-            }
-            AppleTranslationService.shared.translate(
-                text: sampleText,
-                targetLanguageCode: "ZH",
-                mode: settings.appleTranslationMode,
-                onToken: onToken,
-                onComplete: onComplete
-            )
         case .zhipu, .openai, .groq:
             TranslationService.shared.translateStreaming(
                 text: sampleText,

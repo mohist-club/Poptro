@@ -17,7 +17,6 @@ enum ProviderModelServiceError: LocalizedError {
 enum ProviderModelService {
     static func fallbackModels(for provider: TranslationProvider) -> [String] {
         switch provider {
-        case .apple: return []
         case .zhipu: return ["glm-4-flash-250414", "glm-4.7-flash"]
         case .openai: return ["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini"]
         case .deepl: return []
@@ -32,7 +31,7 @@ enum ProviderModelService {
         settings: TranslationSettings
     ) async throws -> [String] {
         switch provider {
-        case .apple, .deepl:
+        case .deepl:
             return []
         case .ollama:
             return try await fetchOllamaModels(baseURL: settings.ollamaBaseURL)
@@ -50,12 +49,6 @@ enum ProviderModelService {
         for provider: TranslationProvider,
         settings: TranslationSettings
     ) async throws {
-        if provider == .apple {
-            guard AppleTranslationSupport.isAvailable else {
-                throw ProviderModelServiceError.requestFailed("Apple 翻译需要 macOS 15 或更高版本")
-            }
-            return
-        }
         if provider == .deepl {
             let key = try apiKey(for: .deepl)
             let host = key.hasSuffix(":fx") ? "api-free.deepl.com" : "api.deepl.com"
@@ -80,7 +73,6 @@ enum ProviderModelService {
     ) async throws -> [String] {
         let urlString: String
         switch provider {
-        case .apple: throw ProviderModelServiceError.invalidResponse
         case .zhipu: urlString = "https://open.bigmodel.cn/api/paas/v4/models"
         case .openai: urlString = "https://api.openai.com/v1/models"
         case .groq: urlString = "https://api.groq.com/openai/v1/models"

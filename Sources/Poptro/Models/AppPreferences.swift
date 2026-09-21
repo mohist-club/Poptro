@@ -126,8 +126,6 @@ extension PanelAppearanceMode {
 extension TranslationProvider {
     func localizedDisplayName(language: InterfaceLanguage) -> String {
         switch self {
-        case .apple:
-            return PoptroText.value("Apple 翻译", "Apple Translate", language: language)
         case .zhipu:
             return PoptroText.value("智谱 GLM（默认）", "Zhipu GLM (Default)", language: language)
         case .openai:

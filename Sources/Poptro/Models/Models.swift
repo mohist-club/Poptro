@@ -1,19 +1,59 @@
 import Foundation
 
-/// 一条"快捷键 -> 打开某个 App"的绑定记录
+enum ShortcutActionKind: String, Codable, CaseIterable, Identifiable {
+    case application
+    case shortcut
+    case system
+    case script
+
+    var id: String { rawValue }
+}
+
+enum SystemShortcutAction: String, Codable, CaseIterable, Identifiable {
+    case lockScreen
+    case sleep
+    case emptyTrash
+    case logOut
+    case restart
+    case shutDown
+
+    var id: String { rawValue }
+    var requiresConfirmation: Bool { [.emptyTrash, .logOut, .restart, .shutDown].contains(self) }
+}
+
+enum ShortcutScriptKind: String, Codable, CaseIterable, Identifiable {
+    case shell
+    case appleScript
+    case javaScript
+
+    var id: String { rawValue }
+}
+
+/// 一条全局快捷键绑定。保留早期 appName/appBundlePath 字段名，以便旧配置无损升级。
 struct LaunchBinding: Codable, Identifiable, Equatable {
     let id: UUID
     var appName: String
     var appBundlePath: String   // .app 的完整路径
     var hotkeyName: String      // 对应 KeyboardShortcuts.Name 的 rawValue,格式如 "launch_<uuid>"
     var isEnabled: Bool
+    var actionKind: ShortcutActionKind
+    var scriptKind: ShortcutScriptKind?
 
-    init(id: UUID = UUID(), appName: String, appBundlePath: String, isEnabled: Bool = true) {
+    init(
+        id: UUID = UUID(),
+        appName: String,
+        appBundlePath: String,
+        isEnabled: Bool = true,
+        actionKind: ShortcutActionKind = .application,
+        scriptKind: ShortcutScriptKind? = nil
+    ) {
         self.id = id
         self.appName = appName
         self.appBundlePath = appBundlePath
         self.hotkeyName = "launch_\(id.uuidString)"
         self.isEnabled = isEnabled
+        self.actionKind = actionKind
+        self.scriptKind = scriptKind
     }
 
     init(from decoder: Decoder) throws {
@@ -24,12 +64,13 @@ struct LaunchBinding: Codable, Identifiable, Equatable {
         hotkeyName = try container.decodeIfPresent(String.self, forKey: .hotkeyName)
             ?? "launch_\(id.uuidString)"
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        actionKind = try container.decodeIfPresent(ShortcutActionKind.self, forKey: .actionKind) ?? .application
+        scriptKind = try container.decodeIfPresent(ShortcutScriptKind.self, forKey: .scriptKind)
     }
 }
 
 /// 翻译服务商
 enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
-    case apple
     case zhipu
     case openai
     case deepl
@@ -43,7 +84,6 @@ enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
     /// 设置界面的下拉菜单会自动列出所有 case,不需要改 UI 代码。
     var displayName: String {
         switch self {
-        case .apple: return "Apple 翻译(本地免费)"
         case .zhipu: return "智谱 GLM(默认,免费模型)"
         case .openai: return "OpenAI(GPT 系列)"
         case .deepl: return "DeepL"
@@ -53,23 +93,26 @@ enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var requiresAPIKey: Bool { self != .ollama && self != .apple }
+    var requiresAPIKey: Bool { self != .ollama }
 
     var supportsRemoteModelDiscovery: Bool {
         switch self {
-        case .apple, .deepl: return false
+        case .deepl: return false
         default: return true
         }
     }
-}
 
-/// Apple Translation 在 macOS 26.4 起支持显式选择传统低延迟模型
-/// 或 Apple Intelligence 高保真模型。旧系统仍可用 Apple 翻译，但只能使用低延迟模式。
-enum AppleTranslationMode: String, Codable, CaseIterable, Identifiable {
-    case lowLatency
-    case highFidelity
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        // v1.4.x 曾提供 Apple Translation。移除后把旧默认值迁移到内置推荐服务，
+        // 避免一个未知枚举值导致整份配置解码失败。
+        self = Self(rawValue: raw) ?? .zhipu
+    }
 
-    var id: String { rawValue }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 /// 弹窗外观:浅色/深色是强制指定(不管系统当前是什么模式),跟随系统则由系统决定
@@ -184,7 +227,6 @@ struct TranslationSettings: Codable {
     var zhipuModel: String = "glm-4-flash-250414"
     var groqModel: String = "qwen/qwen3.8-27b"
     var googleModel: String = "gemini-3.5-flash-lite"
-    var appleTranslationMode: AppleTranslationMode = .lowLatency
 
     // 只负责"风格/格式"规则,方向(翻成哪种语言)在发请求时由代码明确指定,
     // 这里不再包含"自动判断中英方向"这句话——之前这句话和运行时追加的强制方向指令冲突,
@@ -220,18 +262,19 @@ struct TranslationSettings: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         provider = try c.decodeIfPresent(TranslationProvider.self, forKey: .provider) ?? .zhipu
-        configuredProviders = try c.decodeIfPresent(
-            Set<TranslationProvider>.self,
+        // 先按原始字符串读取再构造 Set。旧版本若同时保存了 apple 与 zhipu，
+        // apple 迁移为 zhipu 后会自然去重，不会触发 Set.Decodable 的重复值断言。
+        let rawConfiguredProviders = try c.decodeIfPresent(
+            [String].self,
             forKey: .configuredProviders
         ) ?? []
+        configuredProviders = Set(rawConfiguredProviders.map {
+            TranslationProvider(rawValue: $0) ?? .zhipu
+        })
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? "gpt-4.1-mini"
         zhipuModel = try c.decodeIfPresent(String.self, forKey: .zhipuModel) ?? "glm-4-flash-250414"
         groqModel = try c.decodeIfPresent(String.self, forKey: .groqModel) ?? "qwen/qwen3.8-27b"
         googleModel = try c.decodeIfPresent(String.self, forKey: .googleModel) ?? "gemini-3.5-flash-lite"
-        appleTranslationMode = try c.decodeIfPresent(
-            AppleTranslationMode.self,
-            forKey: .appleTranslationMode
-        ) ?? .lowLatency
         customSystemPrompt = try c.decodeIfPresent(String.self, forKey: .customSystemPrompt)
             ?? TranslationSettings().customSystemPrompt
         primaryLanguageCode = try c.decodeIfPresent(String.self, forKey: .primaryLanguageCode) ?? "ZH"
@@ -247,18 +290,6 @@ struct TranslationSettings: Codable {
     static func loadCurrent() -> TranslationSettings {
         var settings = LocalStore.load(TranslationSettings.self, filename: filename, default: TranslationSettings())
         var configured = settings.configuredProviders
-
-        // Apple 翻译不需要 Key；在系统支持时始终视为可用服务。
-        if AppleTranslationSupport.isAvailable {
-            configured.insert(.apple)
-        } else {
-            configured.remove(.apple)
-        }
-        if settings.appleTranslationMode == .highFidelity,
-           !AppleTranslationSupport.supportsTranslationStrategies {
-            settings.appleTranslationMode = .lowLatency
-            settings.save()
-        }
 
         // 兼容旧版本：已经保存过 API Key 的服务直接迁移为“已配置”。
         for provider in TranslationProvider.allCases where provider.requiresAPIKey {
@@ -293,9 +324,6 @@ struct TranslationSettings: Codable {
     func availableConfiguredProviders() -> [TranslationProvider] {
         TranslationProvider.allCases.filter { provider in
             guard configuredProviders.contains(provider) else { return false }
-            if provider == .apple {
-                return AppleTranslationSupport.isAvailable
-            }
             if provider == .ollama {
                 return !ollamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && !ollamaModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -312,8 +340,6 @@ struct TranslationSettings: Codable {
 
     func model(for provider: TranslationProvider) -> String {
         switch provider {
-        case .apple:
-            return appleTranslationMode == .lowLatency ? "Apple Low Latency" : "Apple High Fidelity"
         case .zhipu: return zhipuModel
         case .openai: return model
         case .groq: return groqModel
@@ -325,8 +351,6 @@ struct TranslationSettings: Codable {
 
     mutating func setModel(_ value: String, for provider: TranslationProvider) {
         switch provider {
-        case .apple:
-            appleTranslationMode = value == "Apple High Fidelity" ? .highFidelity : .lowLatency
         case .zhipu: zhipuModel = value
         case .openai: model = value
         case .groq: groqModel = value
